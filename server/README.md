@@ -26,6 +26,12 @@ Generate keys with a trusted secret manager or a local cryptographic random gene
 
 Start the API with `bun run api`. It creates the database schema and campus records on first start. `GET /api/v1/health` reports process/database availability only; it does not indicate that a gateway is connected.
 
+## Frontend status indicator
+
+In local development Vite proxies same-origin `/api/*` requests to `http://127.0.0.1:4000`. The frontend polls only `GET /api/v1/health` and labels the result as API reachability. The dashboard, students, occupancy, and simulated door scans remain demo/localStorage data. The health response does not indicate a signed-in user, a connected gateway, or live access events.
+
+In production, route `/api/v1/health` through the same-origin HTTPS reverse proxy. Keep the signed door-scan endpoint restricted to provisioned gateways; do not enable browser access to it.
+
 ## Gateway signature
 
 For each request, the gateway sends:
