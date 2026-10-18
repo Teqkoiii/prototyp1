@@ -218,7 +218,7 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
                 <span>SSO-Demo (nicht verbunden)</span>
               </div>
               <p className="text-slate-700 leading-relaxed text-[11px]">
-                Demo-Oberfläche ohne Verbindung zu DHBW, DFN-AAI oder Moodle. Gib hier niemals ein echtes Hochschulpasswort ein; es findet keine Authentifizierung statt.
+                Die Moodle-Anmeldung gilt nur für Moodle und meldet dich nicht in dieser App an. Für DHBW-SSO muss diese Anwendung separat als SAML-Dienst registriert werden. Gib hier kein Passwort ein; bis dahin ist nur ein lokales Demo-Profil möglich.
               </p>
             </div>
 
