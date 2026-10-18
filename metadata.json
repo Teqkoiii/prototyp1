@@ -1,0 +1,6 @@
+{
+  "name": "DHBW Campus Gym Live-Auslastung",
+  "description": "Smartes Check-In & Live-Auslastungssystem für den Studierenden-Fitnessraum der DHBW Bad Mergentheim mit RFID-Türintegration, BLE-Geofencing und DSGVO-Konzept.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
