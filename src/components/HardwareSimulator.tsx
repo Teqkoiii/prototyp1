@@ -96,7 +96,7 @@ export const HardwareSimulator: React.FC<HardwareSimulatorProps> = ({
           ...result.rawApiPayload.request,
           endpoint: '/api/v1/beacon/proximity-event',
           body: {
-            studentToken: `jwt-bearer-${bleStudent.matriculationNo}`,
+            studentToken: 'DEMO_TOKEN_NOT_AUTHENTICATED',
             beaconId: 'BEACON-GYM-ROOM-01',
             rssi: -62,
             distanceEstimatedMeters: meters,
@@ -117,7 +117,7 @@ export const HardwareSimulator: React.FC<HardwareSimulatorProps> = ({
           ...result.rawApiPayload.request,
           endpoint: '/api/v1/beacon/proximity-event',
           body: {
-            studentToken: `jwt-bearer-${bleStudent.matriculationNo}`,
+            studentToken: 'DEMO_TOKEN_NOT_AUTHENTICATED',
             beaconId: 'BEACON-GYM-ROOM-01',
             rssi: -92,
             distanceEstimatedMeters: meters,
