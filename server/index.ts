@@ -52,6 +52,13 @@ mkdirSync(dirname(databasePath), { recursive: true });
 const database = new DatabaseSync(databasePath);
 database.exec(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'));
 
+const purgeExpiredAccessLogs = () => {
+  database.prepare('DELETE FROM access_logs WHERE retention_expires_at <= ?').run(new Date().toISOString());
+};
+purgeExpiredAccessLogs();
+const retentionCleanupTimer = setInterval(purgeExpiredAccessLogs, 60_000);
+retentionCleanupTimer.unref();
+
 const app = express();
 app.disable('x-powered-by');
 app.use((_request, response, next) => {
