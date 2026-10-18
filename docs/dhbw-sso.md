@@ -15,6 +15,6 @@ Before implementation can be enabled, obtain and verify:
 
 The app must validate SAML signatures, issuer, audience, destination, time conditions, request correlation, and replay protection on the server. Sessions must use secure, HTTP-only cookies. Do not derive employee permissions from the email text or allow a user to select their own role/campus.
 
-The current UI remains in demo mode and does not authenticate anyone. The supplied personal Gmail address is not treated as a DHBW identity or used as an account. No password, assertion, metadata, or transient `AuthState` value belongs in browser storage, Git, or this repository.
+The current UI remains in demo mode and does not authenticate anyone. No password, assertion, metadata, or transient `AuthState` value belongs in browser storage, Git, or this repository.
 
 See the [SimpleSAMLphp service-provider setup guide](https://simplesamlphp.org/docs/stable/simplesamlphp-sp.html) for the provider metadata exchange model.
