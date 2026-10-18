@@ -39,6 +39,17 @@ CREATE TABLE IF NOT EXISTS access_logs (
   retention_expires_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS occupancy_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  campus_id TEXT NOT NULL REFERENCES campuses(id),
+  recorded_at TEXT NOT NULL,
+  person_count INTEGER NOT NULL CHECK (person_count >= 0),
+  source TEXT NOT NULL CHECK (source IN ('access_control_sessions', 'sensor', 'reconciled'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_occupancy_snapshots_campus_time
+  ON occupancy_snapshots(campus_id, recorded_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_access_logs_expires_at ON access_logs(retention_expires_at);
 CREATE INDEX IF NOT EXISTS idx_access_logs_campus_timestamp ON access_logs(campus_id, timestamp);
 
