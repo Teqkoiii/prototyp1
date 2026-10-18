@@ -32,17 +32,19 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isRetentionHours = (value: unknown): value is number =>
   value === 4 || value === 24 || value === 48;
 const isStudentList = (value: unknown): value is Student[] =>
-  Array.isArray(value) && value.every((item) => isRecord(item) &&
+  Array.isArray(value) && value.length > 0 && value.every((item) => isRecord(item) &&
     typeof item.id === 'string' && validCampusIds.includes(item.campusId as CampusId) &&
     (item.role === 'student' || item.role === 'employee') &&
     typeof item.firstName === 'string' && typeof item.lastName === 'string' &&
-    typeof item.rfidUid === 'string' && typeof item.safetyBriefingCompleted === 'boolean' &&
+    typeof item.rfidUid === 'string' && typeof item.course === 'string' && typeof item.email === 'string' &&
+    typeof item.matriculationNo === 'string' && typeof item.safetyBriefingCompleted === 'boolean' &&
     typeof item.cardActive === 'boolean' &&
     (item.privacyMode === 'public' || item.privacyMode === 'pseudonym' || item.privacyMode === 'anonymous'));
 const isCheckInList = (value: unknown): value is ActiveCheckIn[] =>
   Array.isArray(value) && value.every((item) => isRecord(item) &&
     typeof item.id === 'string' && typeof item.studentId === 'string' &&
-    validCampusIds.includes(item.campusId as CampusId) && typeof item.timestampIn === 'string');
+    validCampusIds.includes(item.campusId as CampusId) && typeof item.timestampIn === 'string' &&
+    Number.isFinite(Date.parse(item.timestampIn)));
 const isAccessLogList = (value: unknown): value is AccessLog[] =>
   Array.isArray(value) && value.every((item) => isRecord(item) &&
     typeof item.id === 'string' && validCampusIds.includes(item.campusId as CampusId) &&
@@ -51,7 +53,8 @@ const isAccessLogList = (value: unknown): value is AccessLog[] =>
 const isGymState = (value: unknown): value is GymState =>
   isRecord(value) && validCampusIds.includes(value.campusId as CampusId) &&
   typeof value.currentOccupancy === 'number' && typeof value.comfortGuide === 'number' &&
-  typeof value.isOpen === 'boolean';
+  typeof value.warningThreshold === 'number' && typeof value.criticalThreshold === 'number' &&
+  typeof value.openingHours === 'string' && typeof value.isOpen === 'boolean';
 
 function readStoredValue<T>(key: string, fallback: T, isValid: (value: unknown) => value is T): T {
   try {
