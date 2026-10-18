@@ -22,6 +22,9 @@ import { TechnicalConceptView } from './components/TechnicalConceptView';
 import { DsgvoPrivacyView } from './components/DsgvoPrivacyView';
 import { StudentRegistrationModal } from './components/StudentRegistrationModal';
 import { StudentProfileModal } from './components/StudentProfileModal';
+import { PresenceActionCard } from './components/PresenceActionCard';
+import { getPresenceState, setPresenceState } from './services/presenceWidget';
+import type { PresenceState } from './services/presenceState';
 import { Radio, Wifi, Shield, Bell, Check, Sparkles, MapPin, Infinity as InfinityIcon } from 'lucide-react';
 import { useLanguage } from './context/LanguageContext';
 
@@ -110,6 +113,11 @@ export default function App() {
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [presence, setPresence] = useState<PresenceState>({
+    isPresent: false,
+    updatedAt: null,
+    scope: 'this-device-demo',
+  });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Sync state to local storage
@@ -156,6 +164,25 @@ export default function App() {
     };
   }, []);
 
+  // Refresh when a native widget action returns to the app. This state is device-local demo data.
+  useEffect(() => {
+    let active = true;
+    const refreshPresence = () => {
+      void getPresenceState().then((next) => {
+        if (active) setPresence(next);
+      });
+    };
+
+    refreshPresence();
+    window.addEventListener('focus', refreshPresence);
+    document.addEventListener('visibilitychange', refreshPresence);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', refreshPresence);
+      document.removeEventListener('visibilitychange', refreshPresence);
+    };
+  }, []);
+
   // Apply the configured retention period to every access log.
   useEffect(() => {
     const purgeInterval = setInterval(() => {
@@ -175,6 +202,16 @@ export default function App() {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleSetPresence = async (isPresent: boolean) => {
+    try {
+      const next = await setPresenceState(isPresent);
+      setPresence(next);
+      showToast(isPresent ? 'Demo-Check-in lokal aktualisiert' : 'Demo-Check-out lokal aktualisiert');
+    } catch {
+      showToast('Der Check-in konnte auf diesem Gerät nicht gespeichert werden');
+    }
   };
 
   // Check-Out student by ID
@@ -369,6 +406,10 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {activeTab === 'dashboard' && (
+          <PresenceActionCard language={language} presence={presence} onSetPresence={handleSetPresence} />
+        )}
+
         {activeTab === 'dashboard' && (
           <DashboardView
             gymState={{ ...gymState, currentOccupancy: currentCampusCheckIns.length }}
