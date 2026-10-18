@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { checkAccessApi } from './services/accessApi';
+import { fetchOccupancy, subscribeToOccupancy, type OccupancySnapshot } from './services/occupancyApi';
 import {
   INITIAL_STUDENTS,
   INITIAL_CHECKINS,
@@ -110,6 +111,8 @@ export default function App() {
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [liveOccupancy, setLiveOccupancy] = useState<OccupancySnapshot | null>(null);
+  const [occupancyStreamStatus, setOccupancyStreamStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Sync state to local storage
@@ -155,6 +158,36 @@ export default function App() {
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
   }, []);
+
+  // Prefer the backend's shared occupancy count; local check-ins remain demo-only fallback.
+  useEffect(() => {
+    let active = true;
+    setLiveOccupancy(null);
+    setOccupancyStreamStatus('connecting');
+
+    void fetchOccupancy(selectedCampusId)
+      .then((snapshot) => {
+        if (active) setLiveOccupancy(snapshot);
+      })
+      .catch(() => {
+        if (active) setLiveOccupancy(null);
+      });
+
+    const unsubscribe = subscribeToOccupancy(
+      selectedCampusId,
+      (snapshot) => {
+        if (active) setLiveOccupancy(snapshot);
+      },
+      (streamStatus) => {
+        if (active) setOccupancyStreamStatus(streamStatus);
+      },
+    );
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [selectedCampusId]);
 
   // Apply the configured retention period to every access log.
   useEffect(() => {
@@ -280,7 +313,8 @@ export default function App() {
   };
 
   const currentCampusCheckIns = checkIns.filter((c) => c.campusId === selectedCampus.id);
-  const status = calculateOccupancyStatus(currentCampusCheckIns.length, selectedCampus.comfortGuide);
+  const displayOccupancyCount = liveOccupancy?.current ?? currentCampusCheckIns.length;
+  const status = calculateOccupancyStatus(displayOccupancyCount, selectedCampus.comfortGuide);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -296,7 +330,7 @@ export default function App() {
       <Header
         activeTab={activeTab === 'dsgvo' ? 'students' : activeTab}
         setActiveTab={(tab) => setActiveTab(tab)}
-        occupancyCount={currentCampusCheckIns.length}
+        occupancyCount={displayOccupancyCount}
         status={status}
         selectedCampus={selectedCampus}
         campuses={DHBW_CAMPUSES}
@@ -327,11 +361,11 @@ export default function App() {
                 aria-hidden="true"
               />
               <span className="text-white font-medium">{selectedCampus.shortName}:</span>
-              <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-amber-300">DEMO-DATEN</span>
+              <span className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold tracking-wider ${liveOccupancy ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300"}`}>{liveOccupancy ? "BACKEND-ZÄHLUNG" : "DEMO-DATEN"}</span>
               <span className="text-slate-400" title="Technischer API-Health-Check; keine Aussage zu DHBW-Anmeldung, Live-Belegung oder Türhardware.">
                 {apiStatus === 'online' ? 'API erreichbar' : apiStatus === 'checking' ? 'API wird geprüft' : 'API nicht erreichbar'}
               </span>
-              <span className="text-slate-300 font-mono tabular-nums">{currentCampusCheckIns.length} Personen aktiv</span>
+              <span className="text-slate-300 font-mono tabular-nums">{displayOccupancyCount} Personen aktiv</span>
             </div>
             <span className="text-slate-600">·</span>
             <span className="text-emerald-400 font-medium hidden sm:inline-flex items-center gap-1">
