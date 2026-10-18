@@ -78,8 +78,9 @@ export function processDoorScan(
     headers: {
       'Content-Type': 'application/json',
       'X-Device-ID': `DOOR-${activeCampusId.toUpperCase()}-01`,
-      'X-Gateway-Signature':
-        'sha256=' + Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+      // This is a local demo payload, not a cryptographic signature. Real gateway
+      // authentication must be generated and verified by the backend/device integration.
+      'X-Gateway-Signature': 'SIMULATION_ONLY_NOT_AUTHENTICATED',
     },
     body: {
       rfidUid: cleanUid,
