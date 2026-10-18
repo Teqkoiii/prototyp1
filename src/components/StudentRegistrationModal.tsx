@@ -377,7 +377,7 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
                   <span>Demo: keine SAML-Prüfung</span>
                 ) : (
                   <>
-                    <span>SSO nicht verbunden</span>
+                    <span>Demo-Profil lokal anlegen</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </>
                 )}
