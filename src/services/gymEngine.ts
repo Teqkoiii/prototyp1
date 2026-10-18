@@ -142,6 +142,47 @@ export function processDoorScan(
     };
   }
 
+  // Campus assignment is part of the access decision, not just a display filter.
+  if (targetCampusId && student.campusId !== targetCampusId) {
+    const deniedLog: AccessLog = {
+      id: `log-${Date.now()}`,
+      campusId: targetCampusId,
+      timestamp: new Date().toISOString(),
+      eventType: 'access_denied',
+      rfidUidMasked: maskUid(student.rfidUid),
+      studentIdMasked: `stud-${student.id.slice(-4)}`,
+      displayName: formatStudentDisplayName(student),
+      method,
+      reason: 'Standort nicht freigegeben: Campus-Zuordnung stimmt nicht überein',
+      doorId: `DOOR-${targetCampusId.toUpperCase()}-01`,
+      retentionExpiresAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+    };
+    newLogs.unshift(deniedLog);
+    const campusCheckInsCount = newCheckIns.filter((c) => c.campusId === targetCampusId).length;
+    const doorResponse: DoorScanResponse = {
+      allowed: false,
+      action: 'denied',
+      message: 'Zugang verweigert: Dieser Standort ist deinem Profil nicht zugeordnet.',
+      occupancy: {
+        current: campusCheckInsCount,
+        status: calculateOccupancyStatus(campusCheckInsCount, newGymState.comfortGuide),
+      },
+    };
+    return {
+      doorResponse,
+      updatedStudents: students,
+      updatedCheckIns: newCheckIns,
+      updatedLogs: newLogs,
+      updatedGymState: { ...newGymState, currentOccupancy: campusCheckInsCount },
+      rawApiPayload: {
+        request: requestPayload,
+        response: doorResponse as unknown as Record<string, unknown>,
+        statusCode: 403,
+        latencyMs: 0,
+      },
+    };
+  }
+
   // Case 2: Keine Sicherheitseinweisung absolviert!
   if (!student.safetyBriefingCompleted) {
     const deniedLog: AccessLog = {
