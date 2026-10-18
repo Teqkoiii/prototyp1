@@ -26,11 +26,39 @@ import { useLanguage } from './context/LanguageContext';
 
 
 // Storage is best-effort only. Browser storage is not a secure or shared database.
-function readStoredValue<T>(key: string, fallback: T): T {
+const validCampusIds: CampusId[] = ['dhbw-mgt', 'dhbw-mosbach', 'dhbw-heilbronn', 'dhbw-stuttgart'];
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+const isRetentionHours = (value: unknown): value is number =>
+  value === 4 || value === 24 || value === 48;
+const isStudentList = (value: unknown): value is Student[] =>
+  Array.isArray(value) && value.every((item) => isRecord(item) &&
+    typeof item.id === 'string' && validCampusIds.includes(item.campusId as CampusId) &&
+    (item.role === 'student' || item.role === 'employee') &&
+    typeof item.firstName === 'string' && typeof item.lastName === 'string' &&
+    typeof item.rfidUid === 'string' && typeof item.safetyBriefingCompleted === 'boolean' &&
+    typeof item.cardActive === 'boolean' &&
+    (item.privacyMode === 'public' || item.privacyMode === 'pseudonym' || item.privacyMode === 'anonymous'));
+const isCheckInList = (value: unknown): value is ActiveCheckIn[] =>
+  Array.isArray(value) && value.every((item) => isRecord(item) &&
+    typeof item.id === 'string' && typeof item.studentId === 'string' &&
+    validCampusIds.includes(item.campusId as CampusId) && typeof item.timestampIn === 'string');
+const isAccessLogList = (value: unknown): value is AccessLog[] =>
+  Array.isArray(value) && value.every((item) => isRecord(item) &&
+    typeof item.id === 'string' && validCampusIds.includes(item.campusId as CampusId) &&
+    typeof item.timestamp === 'string' && typeof item.displayName === 'string' &&
+    ['check_in', 'check_out', 'access_denied', 'auto_checkout'].includes(String(item.eventType)));
+const isGymState = (value: unknown): value is GymState =>
+  isRecord(value) && validCampusIds.includes(value.campusId as CampusId) &&
+  typeof value.currentOccupancy === 'number' && typeof value.comfortGuide === 'number' &&
+  typeof value.isOpen === 'boolean';
+
+function readStoredValue<T>(key: string, fallback: T, isValid: (value: unknown) => value is T): T {
   try {
     const raw = window.localStorage.getItem(key);
     if (raw === null) return fallback;
-    return JSON.parse(raw) as T;
+    const value: unknown = JSON.parse(raw);
+    return isValid(value) ? value : fallback;
   } catch {
     return fallback;
   }
@@ -49,33 +77,32 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'hardware' | 'students' | 'concept' | 'dsgvo'>('dashboard');
 
   const [selectedCampusId, setSelectedCampusId] = useState<CampusId>(() => {
-    const saved = readStoredValue<string>('dhbw_selected_campus', 'dhbw-mgt');
-    const validCampusIds: CampusId[] = ['dhbw-mgt', 'dhbw-mosbach', 'dhbw-heilbronn', 'dhbw-stuttgart'];
+    const saved = readStoredValue<string>('dhbw_selected_campus', 'dhbw-mgt', (value): value is string => typeof value === 'string');
     return validCampusIds.includes(saved as CampusId) ? (saved as CampusId) : 'dhbw-mgt';
   });
 
   const selectedCampus = DHBW_CAMPUSES.find((c) => c.id === selectedCampusId) || DHBW_CAMPUSES[0];
 
   const [students, setStudents] = useState<Student[]>(() =>
-    readStoredValue<Student[]>('dhbw_gym_students', INITIAL_STUDENTS)
+    readStoredValue<Student[]>('dhbw_gym_students', INITIAL_STUDENTS, isStudentList)
   );
 
   const [checkIns, setCheckIns] = useState<ActiveCheckIn[]>(() =>
-    readStoredValue<ActiveCheckIn[]>('dhbw_gym_checkins', INITIAL_CHECKINS)
+    readStoredValue<ActiveCheckIn[]>('dhbw_gym_checkins', INITIAL_CHECKINS, isCheckInList)
   );
 
   const [logs, setLogs] = useState<AccessLog[]>(() =>
-    readStoredValue<AccessLog[]>('dhbw_gym_logs', INITIAL_ACCESS_LOGS)
+    readStoredValue<AccessLog[]>('dhbw_gym_logs', INITIAL_ACCESS_LOGS, isAccessLogList)
   );
 
   const [gymState, setGymState] = useState<GymState>(() =>
-    readStoredValue<GymState>('dhbw_gym_state', INITIAL_GYM_STATE)
+    readStoredValue<GymState>('dhbw_gym_state', INITIAL_GYM_STATE, isGymState)
   );
 
   const [currentUserId, setCurrentUserId] = useState<string>(() => students[0]?.id || 'stud-01');
   const currentUser = students.find((s) => s.id === currentUserId) || students[0];
 
-  const [retentionHours, setRetentionHours] = useState<number>(48); // Standard 48 Stunden nach DSGVO
+  const [retentionHours, setRetentionHours] = useState<number>(() => readStoredValue<number>('dhbw_retention_hours', 48, isRetentionHours));
   const [isRegistrationOpen, setIsRegistrationOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [realtimePulse, setRealtimePulse] = useState(false);
@@ -102,6 +129,10 @@ export default function App() {
     writeStoredValue('dhbw_gym_state', gymState);
   }, [gymState]);
 
+  useEffect(() => {
+    writeStoredValue('dhbw_retention_hours', retentionHours);
+  }, [retentionHours]);
+
   // Real-time pulse effect (simulating WebSocket telemetry)
   useEffect(() => {
     const interval = setInterval(() => {
@@ -111,14 +142,16 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // 48h DSGVO Auto-Purge Routine
+  // Apply the configured retention period to every access log.
   useEffect(() => {
     const purgeInterval = setInterval(() => {
       const now = Date.now();
       setLogs((prevLogs) => {
         const filtered = prevLogs.filter((log) => {
-          const logTime = new Date(log.timestamp).getTime();
-          return now - logTime <= retentionHours * 3600 * 1000;
+          const expiry = log.retentionExpiresAt
+            ? new Date(log.retentionExpiresAt).getTime()
+            : new Date(log.timestamp).getTime() + retentionHours * 3600 * 1000;
+          return Number.isFinite(expiry) && expiry > now;
         });
         return filtered;
       });
@@ -137,7 +170,7 @@ export default function App() {
     const student = students.find((s) => s.id === studentId);
     if (!student) return;
 
-    const result = processDoorScan(student.rfidUid, students, checkIns, logs, gymState, 'rfid_door', selectedCampus.id);
+    const result = processDoorScan(student.rfidUid, students, checkIns, logs, gymState, 'rfid_door', selectedCampus.id, undefined, retentionHours);
     setCheckIns(result.updatedCheckIns);
     setLogs(result.updatedLogs);
     setGymState(result.updatedGymState);
@@ -227,7 +260,12 @@ export default function App() {
   // Purge all logs manually
   const handlePurgeLogs = () => {
     const now = Date.now();
-    setLogs((prev) => prev.filter((log) => now - new Date(log.timestamp).getTime() < 3600 * 1000));
+    setLogs((prev) => prev.filter((log) => {
+      const expiry = log.retentionExpiresAt
+        ? new Date(log.retentionExpiresAt).getTime()
+        : new Date(log.timestamp).getTime() + retentionHours * 3600 * 1000;
+      return Number.isFinite(expiry) && expiry > now;
+    }));
     showToast('DSGVO-Bereinigung ausgeführt: Ältere Logs gelöscht.');
   };
 
@@ -339,6 +377,7 @@ export default function App() {
             logs={logs}
             gymState={{ ...gymState, currentOccupancy: currentCampusCheckIns.length }}
             selectedCampus={selectedCampus}
+            retentionHours={retentionHours}
             onScanResult={handleScanResult}
           />
         )}
@@ -380,7 +419,7 @@ export default function App() {
           <div className="flex items-center gap-4 text-slate-400">
             <span>Standort: {selectedCampus.location}</span>
             <span>·</span>
-            <span>48h DSGVO-Auto-Purge aktiv</span>
+            <span>{retentionHours}h Log-Aufbewahrung aktiv (Demo)</span>
             <span>·</span>
             <button
               onClick={() => setActiveTab('concept')}
