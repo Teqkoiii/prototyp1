@@ -142,7 +142,8 @@ app.use(express.json());
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-const GATEWAY_SECRET = process.env.DOOR_GATEWAY_HMAC_SECRET || 'dhbw_secret_key_2026';
+const GATEWAY_SECRET = process.env.DOOR_GATEWAY_HMAC_SECRET;
+if (!GATEWAY_SECRET) throw new Error('DOOR_GATEWAY_HMAC_SECRET must be configured securely');
 const MAX_CAPACITY = 15;
 
 // Broadcast an alle verbundenen WebSockets (Mobile Apps & Web Dashboards)
@@ -255,8 +256,9 @@ setInterval(async () => {
 #define BUZZER_PIN     25
 
 MFRC522 rfc(SS_PIN, RST_PIN);
-const char* API_URL = "https://gym.dhbw-mergentheim.de/api/v1/door/scan";
-const char* HMAC_KEY = "dhbw_secret_key_2026";
+const char* API_URL = "<CONFIGURE_BACKEND_URL>";
+// Provision this secret securely per device. Never commit gateway credentials.
+const char* HMAC_KEY = nullptr;
 
 void setup() {
   Serial.begin(115200);
@@ -269,7 +271,8 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(RELAY_DOOR_PIN, LOW);
 
-  WiFi.begin("DHBW-Campus-IoT", "campus_secure_psk");
+  // Load Wi-Fi credentials from secure device provisioning; do not hard-code them.
+  WiFi.begin("<CONFIGURE_WIFI_SSID>", "<CONFIGURE_WIFI_PASSWORD>");
   while (WiFi.status() != WL_CONNECTED) delay(500);
 }
 
