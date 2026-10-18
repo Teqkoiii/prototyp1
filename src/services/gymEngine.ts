@@ -56,7 +56,8 @@ export function processDoorScan(
   gymState: GymState,
   method: CheckInMethod = 'rfid_door',
   targetCampusId?: CampusId,
-  simulatedDayOfWeek?: number
+  simulatedDayOfWeek?: number,
+  retentionHours: number = 48
 ): EngineResult {
   const cleanUid = rfidUid.trim().toUpperCase();
   const student = students.find((s) => s.rfidUid.toUpperCase() === cleanUid);
@@ -78,8 +79,9 @@ export function processDoorScan(
     headers: {
       'Content-Type': 'application/json',
       'X-Device-ID': `DOOR-${activeCampusId.toUpperCase()}-01`,
-      'X-Gateway-Signature':
-        'sha256=' + Array.from({ length: 16 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+      // This is a local demo payload, not a cryptographic signature. Real gateway
+      // authentication must be generated and verified by the backend/device integration.
+      'X-Gateway-Signature': 'SIMULATION_ONLY_NOT_AUTHENTICATED',
     },
     body: {
       rfidUid: cleanUid,
@@ -108,7 +110,7 @@ export function processDoorScan(
       method,
       reason: 'Ausweis-ID nicht im System registriert',
       doorId: `DOOR-${activeCampusId.toUpperCase()}-01`,
-      retentionExpiresAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      retentionExpiresAt: new Date(Date.now() + retentionHours * 3600 * 1000).toISOString(),
     };
     newLogs.unshift(deniedLog);
 
@@ -142,6 +144,83 @@ export function processDoorScan(
     };
   }
 
+  // Campus assignment is part of the access decision, not just a display filter.
+  if (targetCampusId && student.campusId !== targetCampusId) {
+    const deniedLog: AccessLog = {
+      id: `log-${Date.now()}`,
+      campusId: targetCampusId,
+      timestamp: new Date().toISOString(),
+      eventType: 'access_denied',
+      rfidUidMasked: maskUid(student.rfidUid),
+      studentIdMasked: `stud-${student.id.slice(-4)}`,
+      displayName: formatStudentDisplayName(student),
+      method,
+      reason: 'Standort nicht freigegeben: Campus-Zuordnung stimmt nicht überein',
+      doorId: `DOOR-${targetCampusId.toUpperCase()}-01`,
+      retentionExpiresAt: new Date(Date.now() + retentionHours * 3600 * 1000).toISOString(),
+    };
+    newLogs.unshift(deniedLog);
+    const campusCheckInsCount = newCheckIns.filter((c) => c.campusId === targetCampusId).length;
+    const doorResponse: DoorScanResponse = {
+      allowed: false,
+      action: 'denied',
+      message: 'Zugang verweigert: Dieser Standort ist deinem Profil nicht zugeordnet.',
+      occupancy: {
+        current: campusCheckInsCount,
+        status: calculateOccupancyStatus(campusCheckInsCount, newGymState.comfortGuide),
+      },
+    };
+    return {
+      doorResponse,
+      updatedStudents: students,
+      updatedCheckIns: newCheckIns,
+      updatedLogs: newLogs,
+      updatedGymState: { ...newGymState, currentOccupancy: campusCheckInsCount },
+      rawApiPayload: {
+        request: requestPayload,
+        response: doorResponse as unknown as Record<string, unknown>,
+        statusCode: 403,
+        latencyMs: 0,
+      },
+    };
+  }
+
+  // A disabled card must be denied even if the briefing is complete.
+  if (!student.cardActive) {
+    const deniedLog: AccessLog = {
+      id: `log-${Date.now()}`,
+      campusId: student.campusId,
+      timestamp: new Date().toISOString(),
+      eventType: 'access_denied',
+      rfidUidMasked: maskUid(student.rfidUid),
+      studentIdMasked: `stud-${student.id.slice(-4)}`,
+      displayName: formatStudentDisplayName(student),
+      method,
+      reason: 'Ausweis deaktiviert',
+      doorId: `DOOR-${student.campusId.toUpperCase()}-01`,
+      retentionExpiresAt: new Date(Date.now() + retentionHours * 3600 * 1000).toISOString(),
+    };
+    newLogs.unshift(deniedLog);
+    const campusCheckInsCount = newCheckIns.filter((c) => c.campusId === student.campusId).length;
+    const doorResponse: DoorScanResponse = {
+      allowed: false,
+      action: 'denied',
+      message: 'Zugang verweigert: Dieser Ausweis ist deaktiviert.',
+      occupancy: {
+        current: campusCheckInsCount,
+        status: calculateOccupancyStatus(campusCheckInsCount, newGymState.comfortGuide),
+      },
+    };
+    return {
+      doorResponse, updatedStudents: students, updatedCheckIns: newCheckIns, updatedLogs: newLogs,
+      updatedGymState: { ...newGymState, currentOccupancy: campusCheckInsCount },
+      rawApiPayload: {
+        request: requestPayload, response: doorResponse as unknown as Record<string, unknown>,
+        statusCode: 403, latencyMs: 0,
+      },
+    };
+  }
+
   // Case 2: Keine Sicherheitseinweisung absolviert!
   if (!student.safetyBriefingCompleted) {
     const deniedLog: AccessLog = {
@@ -155,7 +234,7 @@ export function processDoorScan(
       method,
       reason: 'Sicherheitseinweisung ausstehend (Freischaltung gesperrt)',
       doorId: `DOOR-${student.campusId.toUpperCase()}-01`,
-      retentionExpiresAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      retentionExpiresAt: new Date(Date.now() + retentionHours * 3600 * 1000).toISOString(),
     };
     newLogs.unshift(deniedLog);
 
@@ -207,7 +286,7 @@ export function processDoorScan(
       method,
       reason: 'Mittwochs-Regel: Fitnessraum heute exklusiv für DHBW-Mitarbeitende reserviert',
       doorId: `DOOR-${student.campusId.toUpperCase()}-01`,
-      retentionExpiresAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      retentionExpiresAt: new Date(Date.now() + retentionHours * 3600 * 1000).toISOString(),
     };
     newLogs.unshift(deniedLog);
 
@@ -262,7 +341,7 @@ export function processDoorScan(
       displayName: formatStudentDisplayName(student),
       method,
       doorId: `DOOR-${student.campusId.toUpperCase()}-01`,
-      retentionExpiresAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      retentionExpiresAt: new Date(Date.now() + retentionHours * 3600 * 1000).toISOString(),
     };
     newLogs.unshift(checkoutLog);
 
@@ -326,7 +405,7 @@ export function processDoorScan(
     displayName: formatStudentDisplayName(student),
     method,
     doorId: `DOOR-${student.campusId.toUpperCase()}-01`,
-    retentionExpiresAt: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+    retentionExpiresAt: new Date(Date.now() + retentionHours * 3600 * 1000).toISOString(),
   };
   newLogs.unshift(checkinLog);
 

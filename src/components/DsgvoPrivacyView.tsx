@@ -166,7 +166,7 @@ export const DsgvoPrivacyView: React.FC<DsgvoPrivacyViewProps> = ({
             </h2>
           </div>
           <p className="text-sm text-slate-600 mt-1 max-w-2xl leading-relaxed">
-            Gemäß EU-DSGVO (Art. 15 Auskunftsrecht & Art. 20 Datenübertragbarkeit) können Studierende ihre Zugangsdaten jederzeit transparent einsehen und als <strong>CSV für Tabellenkalkulationen</strong> oder JSON exportieren. Alte Logs werden nach 48 Stunden automatisch restlos vernichtet.
+            Gemäß EU-DSGVO (Art. 15 Auskunftsrecht & Art. 20 Datenübertragbarkeit) können Studierende ihre Zugangsdaten jederzeit transparent einsehen und als <strong>CSV für Tabellenkalkulationen</strong> oder JSON exportieren. Alte Logs werden nach der ausgewählten Frist von {retentionHours} Stunden automatisch aus dieser Demo-Ansicht entfernt.
           </p>
         </div>
 
@@ -216,7 +216,7 @@ export const DsgvoPrivacyView: React.FC<DsgvoPrivacyViewProps> = ({
               {retentionHours} Stunden
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Nach Ablauf dieser Frist werden Check-In-Logs restlos und automatisiert aus der Datenbank gelöscht.
+              Nach Ablauf dieser Frist werden Check-In-Logs restlos und automatisiert aus dieser Demo-Ansicht entfernt.
             </p>
           </div>
 
