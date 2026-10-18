@@ -46,7 +46,7 @@ const isCheckInList = (value: unknown): value is ActiveCheckIn[] =>
 const isAccessLogList = (value: unknown): value is AccessLog[] =>
   Array.isArray(value) && value.every((item) => isRecord(item) &&
     typeof item.id === 'string' && validCampusIds.includes(item.campusId as CampusId) &&
-    typeof item.timestamp === 'string' && typeof item.displayName === 'string' &&
+    typeof item.timestamp === 'string' && Number.isFinite(Date.parse(item.timestamp)) && typeof item.displayName === 'string' &&
     ['check_in', 'check_out', 'access_denied', 'auto_checkout'].includes(String(item.eventType)));
 const isGymState = (value: unknown): value is GymState =>
   isRecord(value) && validCampusIds.includes(value.campusId as CampusId) &&
@@ -148,9 +148,7 @@ export default function App() {
       const now = Date.now();
       setLogs((prevLogs) => {
         const filtered = prevLogs.filter((log) => {
-          const expiry = log.retentionExpiresAt
-            ? new Date(log.retentionExpiresAt).getTime()
-            : new Date(log.timestamp).getTime() + retentionHours * 3600 * 1000;
+          const expiry = new Date(log.timestamp).getTime() + retentionHours * 3600 * 1000;
           return Number.isFinite(expiry) && expiry > now;
         });
         return filtered;
@@ -261,9 +259,7 @@ export default function App() {
   const handlePurgeLogs = () => {
     const now = Date.now();
     setLogs((prev) => prev.filter((log) => {
-      const expiry = log.retentionExpiresAt
-        ? new Date(log.retentionExpiresAt).getTime()
-        : new Date(log.timestamp).getTime() + retentionHours * 3600 * 1000;
+      const expiry = new Date(log.timestamp).getTime() + retentionHours * 3600 * 1000;
       return Number.isFinite(expiry) && expiry > now;
     }));
     showToast('DSGVO-Bereinigung ausgeführt: Ältere Logs gelöscht.');
@@ -401,7 +397,10 @@ export default function App() {
 
         {activeTab === 'dsgvo' && (
           <DsgvoPrivacyView
-            logs={logs.filter((l) => l.campusId === selectedCampus.id)}
+            logs={logs.filter((l) => l.campusId === selectedCampus.id).map((log) => ({
+              ...log,
+              retentionExpiresAt: new Date(new Date(log.timestamp).getTime() + retentionHours * 3600 * 1000).toISOString(),
+            }))}
             students={students.filter((s) => s.campusId === selectedCampus.id)}
             onPurgeLogs={handlePurgeLogs}
             retentionHours={retentionHours}
