@@ -69,3 +69,25 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Bridge the existing light utility classes into the dark theme while views are migrated. */
+.bg-white { background-color: var(--surface) !important; }
+.bg-slate-50 { background-color: #0b1220 !important; }
+.bg-slate-100 { background-color: var(--surface-raised) !important; }
+.bg-slate-200 { background-color: #263449 !important; }
+.text-slate-950, .text-slate-900 { color: var(--text-primary) !important; }
+.text-slate-800 { color: #dbe5f2 !important; }
+.text-slate-700 { color: #cbd5e1 !important; }
+.text-slate-600 { color: #aab8cb !important; }
+.text-slate-500, .text-slate-400 { color: var(--text-muted) !important; }
+.border-slate-100, .border-slate-200 { border-color: var(--surface-border) !important; }
+.border-slate-300 { border-color: #334155 !important; }
+.bg-emerald-50 { background-color: rgba(16, 185, 129, 0.12) !important; }
+.text-emerald-700, .text-emerald-800, .text-emerald-900 { color: #6ee7b7 !important; }
+.border-emerald-100, .border-emerald-200 { border-color: rgba(52, 211, 153, 0.25) !important; }
+.bg-amber-50 { background-color: rgba(245, 158, 11, 0.12) !important; }
+.text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950 { color: #fcd34d !important; }
+.border-amber-100, .border-amber-200 { border-color: rgba(251, 191, 36, 0.25) !important; }
+.bg-red-50 { background-color: rgba(239, 68, 68, 0.12) !important; }
+.text-red-700, .text-red-800, .text-red-900 { color: #fca5a5 !important; }
+.border-red-100, .border-red-200 { border-color: rgba(248, 113, 113, 0.25) !important; }
