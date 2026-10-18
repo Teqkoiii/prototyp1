@@ -21,3 +21,13 @@ export function decideDoorAccess(input: DoorPolicyInput): DoorDecision {
   }
   return { action: 'check_in', allowed: true };
 }
+
+
+export function isStudentAuthorizedAtCampus(
+  studentCampusId: string,
+  activeSessionCampusId: string | undefined,
+  targetCampusId: string,
+): boolean {
+  if (activeSessionCampusId) return activeSessionCampusId === targetCampusId;
+  return studentCampusId === targetCampusId;
+}

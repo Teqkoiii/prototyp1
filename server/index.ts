@@ -1,14 +1,14 @@
 import 'dotenv/config';
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import express, { type Request, type Response } from 'express';
-import { decideDoorAccess } from './accessPolicy';
+import { decideDoorAccess, isStudentAuthorizedAtCampus } from './accessPolicy';
+import { verifyGatewaySignature } from './gatewayAuth';
 
 const CAMPUS_IDS = new Set(['dhbw-mgt', 'dhbw-mosbach', 'dhbw-heilbronn', 'dhbw-stuttgart']);
 const BODY_LIMIT = '4kb';
-const MAX_CLOCK_SKEW_MS = 30_000;
 const NONCE_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 function readHexSecret(name: string): Buffer {
@@ -106,23 +106,6 @@ function storeLog(input: {
   `).run(randomUUID(), input.campusId, timestamp, input.eventType, maskUid(input.uid), input.reason ?? null, input.doorId, expiresAt);
 }
 
-function signedRequestIsValid(
-  rawBody: Buffer,
-  deviceId: string,
-  timestamp: string,
-  nonce: string,
-  signature: string,
-  secret: Buffer,
-): boolean {
-  const timestampMs = Number(timestamp);
-  if (!Number.isSafeInteger(timestampMs) || Math.abs(Date.now() - timestampMs) > MAX_CLOCK_SKEW_MS) return false;
-  if (!/^[a-fA-F0-9]{32,128}$/.test(nonce) || !/^[a-fA-F0-9]{64}$/.test(signature)) return false;
-  const canonical = ['POST', '/api/v1/door/scan', deviceId, timestamp, nonce, rawBody.toString('utf8')].join('\n');
-  const expected = createHmac('sha256', secret).update(canonical).digest();
-  const provided = Buffer.from(signature, 'hex');
-  return provided.length === expected.length && timingSafeEqual(provided, expected);
-}
-
 app.get('/api/v1/health', (_request, response) => {
   database.prepare('SELECT 1').get();
   response.json({ status: 'ok' });
@@ -139,7 +122,7 @@ app.post('/api/v1/door/scan', express.raw({ type: 'application/json', limit: BOD
   const nonce = request.get('X-Gateway-Nonce') ?? '';
   const signature = request.get('X-Gateway-Signature') ?? '';
   const secret = gatewaySecrets.get(deviceId);
-  if (!secret || !signedRequestIsValid(rawBody, deviceId, timestamp, nonce, signature, secret)) {
+  if (!secret || !verifyGatewaySignature(rawBody, deviceId, timestamp, nonce, signature, secret)) {
     response.status(401).json({ allowed: false, error: 'gateway authentication failed' });
     return;
   }
@@ -193,11 +176,15 @@ app.post('/api/v1/door/scan', express.raw({ type: 'application/json', limit: BOD
       } else {
         const session = database.prepare('SELECT student_id, campus_id FROM active_sessions WHERE student_id = ?').get(student.id) as SessionRow | undefined;
         const checkedInAtThisCampus = session?.campus_id === device.campus_id;
-        if (session && !checkedInAtThisCampus) {
-          storeLog({ campusId: device.campus_id, eventType: 'access_denied', uid, reason: 'session_campus_mismatch', doorId, now });
-          result = { allowed: false, action: 'denied', message: 'Access denied.' };
-        } else if (!checkedInAtThisCampus && student.campus_id !== device.campus_id) {
-          storeLog({ campusId: device.campus_id, eventType: 'access_denied', uid, reason: 'campus_mismatch', doorId, now });
+        if (!isStudentAuthorizedAtCampus(student.campus_id, session?.campus_id, device.campus_id)) {
+          storeLog({
+            campusId: device.campus_id,
+            eventType: 'access_denied',
+            uid,
+            reason: session ? 'session_campus_mismatch' : 'campus_mismatch',
+            doorId,
+            now,
+          });
           result = { allowed: false, action: 'denied', message: 'Access denied.' };
         } else {
           const isWednesday = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'Europe/Berlin' })
