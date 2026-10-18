@@ -58,6 +58,9 @@ const purgeExpiredAccessLogs = () => {
 purgeExpiredAccessLogs();
 const retentionCleanupTimer = setInterval(purgeExpiredAccessLogs, 60_000);
 retentionCleanupTimer.unref();
+recordOccupancySnapshots();
+const occupancySnapshotTimer = setInterval(recordOccupancySnapshots, 60_000);
+occupancySnapshotTimer.unref();
 
 const app = express();
 app.disable('x-powered-by');
@@ -66,6 +69,69 @@ app.use((_request, response, next) => {
   response.setHeader('X-Content-Type-Options', 'nosniff');
   next();
 });
+const configuredCapacity = Number(process.env.GYM_CAPACITY ?? '30');
+if (!Number.isInteger(configuredCapacity) || configuredCapacity < 1 || configuredCapacity > 1000) {
+  throw new Error('GYM_CAPACITY must be an integer between 1 and 1000');
+}
+
+const occupancyStreams = new Map<string, Set<Response>>();
+
+function getOccupancy(campusId: string) {
+  const row = database.prepare(
+    'SELECT COUNT(*) AS count FROM active_sessions WHERE campus_id = ?'
+  ).get(campusId) as { count: number };
+  const latest = database.prepare(
+    "SELECT timestamp FROM access_logs WHERE campus_id = ? AND event_type IN ('check_in', 'check_out') ORDER BY timestamp DESC LIMIT 1"
+  ).get(campusId) as { timestamp: string } | undefined;
+  const current = row.count;
+  return {
+    campusId,
+    current,
+    capacity: configuredCapacity,
+    percentage: Math.min(100, Math.round((current / configuredCapacity) * 100)),
+    status: current / configuredCapacity >= 0.95 ? 'full' : current / configuredCapacity >= 0.75 ? 'busy' : 'available',
+    source: 'access_control_sessions' as const,
+    updatedAt: new Date().toISOString(),
+    lastAccessEventAt: latest?.timestamp ?? null,
+    hardwareStatus: 'not_verified' as const,
+  };
+}
+
+function sendOccupancyEvent(response: Response, campusId: string): void {
+  response.write(`event: occupancy\\ndata: ${JSON.stringify(getOccupancy(campusId))}\\n\\n`);
+}
+
+function broadcastOccupancy(campusId: string): void {
+  const streams = occupancyStreams.get(campusId);
+  if (!streams) return;
+  for (const stream of streams) {
+    if (stream.destroyed || stream.writableEnded) {
+      streams.delete(stream);
+      continue;
+    }
+    sendOccupancyEvent(stream, campusId);
+  }
+}
+
+function recordOccupancySnapshots(): void {
+  const now = new Date().toISOString();
+  const campuses = database.prepare('SELECT id FROM campuses').all() as Array<{ id: string }>;
+  const countForCampus = database.prepare(
+    'SELECT COUNT(*) AS count FROM active_sessions WHERE campus_id = ?'
+  );
+  const insertSnapshot = database.prepare(
+    'INSERT INTO occupancy_snapshots(campus_id, recorded_at, person_count, source) VALUES (?, ?, ?, ?)'
+  );
+  for (const campus of campuses) {
+    const result = countForCampus.get(campus.id) as { count: number };
+    insertSnapshot.run(campus.id, now, result.count, 'access_control_sessions');
+  }
+  database.prepare(
+    "DELETE FROM occupancy_snapshots WHERE recorded_at < ?"
+  ).run(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+}
+
+
 
 interface DeviceRow {
   device_id: string;
@@ -110,6 +176,61 @@ app.get('/api/v1/health', (_request, response) => {
   database.prepare('SELECT 1').get();
   response.json({ status: 'ok' });
 });
+app.get('/api/v1/occupancy', (request, response) => {
+  const campusId = typeof request.query.campusId === 'string' ? request.query.campusId : 'dhbw-mgt';
+  if (!CAMPUS_IDS.has(campusId)) {
+    response.status(400).json({ error: 'invalid campusId' });
+    return;
+  }
+  response.json(getOccupancy(campusId));
+});
+
+app.get('/api/v1/occupancy/history', (request, response) => {
+  const campusId = typeof request.query.campusId === 'string' ? request.query.campusId : 'dhbw-mgt';
+  if (!CAMPUS_IDS.has(campusId)) {
+    response.status(400).json({ error: 'invalid campusId' });
+    return;
+  }
+  const requestedLimit = Number(request.query.limit ?? 96);
+  const limit = Number.isInteger(requestedLimit) ? Math.max(1, Math.min(500, requestedLimit)) : 96;
+  const rows = database.prepare(
+    'SELECT recorded_at AS recordedAt, person_count AS count, source FROM occupancy_snapshots WHERE campus_id = ? ORDER BY recorded_at DESC LIMIT ?'
+  ).all(campusId, limit) as Array<{ recordedAt: string; count: number; source: string }>;
+  response.json({ campusId, points: rows.reverse() });
+});
+
+app.get('/api/v1/occupancy/stream', (request, response) => {
+  const campusId = typeof request.query.campusId === 'string' ? request.query.campusId : 'dhbw-mgt';
+  if (!CAMPUS_IDS.has(campusId)) {
+    response.status(400).json({ error: 'invalid campusId' });
+    return;
+  }
+
+  response.status(200);
+  response.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  response.setHeader('Connection', 'keep-alive');
+  response.setHeader('X-Accel-Buffering', 'no');
+  response.flushHeaders();
+
+  let streams = occupancyStreams.get(campusId);
+  if (!streams) {
+    streams = new Set<Response>();
+    occupancyStreams.set(campusId, streams);
+  }
+  streams.add(response);
+  sendOccupancyEvent(response, campusId);
+  response.write(': connected\\n\\n');
+
+  const keepAlive = setInterval(() => {
+    if (!response.writableEnded) response.write(': keepalive\\n\\n');
+  }, 25_000);
+  request.on('close', () => {
+    clearInterval(keepAlive);
+    streams?.delete(response);
+    if (streams?.size === 0) occupancyStreams.delete(campusId);
+  });
+});
+
 
 app.post('/api/v1/door/scan', express.raw({ type: 'application/json', limit: BODY_LIMIT }), (request: Request, response: Response) => {
   if (!Buffer.isBuffer(request.body)) {
@@ -218,6 +339,9 @@ app.post('/api/v1/door/scan', express.raw({ type: 'application/json', limit: BOD
     const occupancy = database.prepare('SELECT COUNT(*) AS count FROM active_sessions WHERE campus_id = ?').get(campusId) as { count: number };
     database.exec('COMMIT');
     response.status(statusCode).json({ ...result, occupancy: occupancy.count });
+    if (result.action === 'check_in' || result.action === 'check_out') {
+      broadcastOccupancy(campusId);
+    }
   } catch (error) {
     database.exec('ROLLBACK');
     if (error instanceof Error && /UNIQUE constraint failed: gateway_nonces/.test(error.message)) {
