@@ -44,9 +44,8 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
   const [privacyMode, setPrivacyMode] = useState<PrivacyLevel>('pseudonym');
 
   // SSO specific state
-  const [ssoUsername, setSsoUsername] = useState('s7192841');
-  const [ssoPassword, setSsoPassword] = useState('••••••••••••');
-  const [ssoLoading, setSsoLoading] = useState(false);
+  const [ssoUsername, setSsoUsername] = useState('');
+    const [ssoLoading, setSsoLoading] = useState(false);
 
   // Manual code state
   const [verificationCode, setVerificationCode] = useState('');
@@ -164,10 +163,10 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 leading-tight">
-                DHBW Authentifizierung
+                Demo-Registrierung
               </h3>
               <span className="text-[11px] text-slate-500">
-                Single Sign-On (Shibboleth / SimpleSAML) & Registrierung
+                Lokale Demo · keine SSO- oder E-Mail-Verbindung
               </span>
             </div>
           </div>
@@ -191,7 +190,7 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
               }`}
             >
               <Globe className="w-3.5 h-3.5 text-red-600" />
-              <span>DHBW Login (SSO / Moodle)</span>
+              <span>SSO nicht verbunden</span>
             </button>
             <button
               onClick={() => {
@@ -216,10 +215,10 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
             <div className="p-3.5 rounded-lg bg-red-50/70 border border-red-100 text-xs text-red-950">
               <div className="font-bold flex items-center gap-1.5 text-red-800 mb-1">
                 <Globe className="w-3.5 h-3.5 text-red-600" />
-                <span>Zentrales DHBW Identity Management (DFN-AAI)</span>
+                <span>SSO-Demo (nicht verbunden)</span>
               </div>
               <p className="text-slate-700 leading-relaxed text-[11px]">
-                Melde dich direkt mit deiner bekannten <strong>DHBW-Benutzerkennung</strong> an – genau wie bei Moodle (<code>moodle.dhbw.de/simplesaml</code>) oder Dualis. Deine Immatrikulation wird dabei sofort kryptografisch bestätigt.
+                Demo-Oberfläche ohne Verbindung zu DHBW, DFN-AAI oder Moodle. Gib hier niemals ein echtes Hochschulpasswort ein; es findet keine Authentifizierung statt.
               </p>
             </div>
 
@@ -261,16 +260,15 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
 
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Hochschul-Passwort
+                  Demo-Feld · kein echtes Passwort eingeben
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="password"
-                    required
-                    value={ssoPassword}
-                    onChange={(e) => setSsoPassword(e.target.value)}
-                    className="w-full text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-3 py-2.5 focus:ring-2 focus:ring-red-500 focus:outline-none"
+                    type="text"
+                    value="SSO nicht verbunden"
+                    readOnly
+                    className="w-full text-xs font-mono bg-slate-100 border border-slate-300 rounded-lg pl-9 pr-3 py-2.5 text-slate-500"
                   />
                 </div>
               </div>
@@ -367,7 +365,7 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
             <div className="pt-3 flex items-center justify-between border-t border-slate-100">
               <span className="text-[11px] text-slate-500 flex items-center gap-1 font-mono">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                SAML 2.0 SSL
+                Keine IdP-Verbindung
               </span>
 
               <button
@@ -376,10 +374,10 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
                 className="px-4 py-2.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs disabled:opacity-50"
               >
                 {ssoLoading ? (
-                  <span>Überprüfe DHBW SAML Assertion...</span>
+                  <span>Demo: keine SAML-Prüfung</span>
                 ) : (
                   <>
-                    <span>Über DHBW Single Sign-On anmelden</span>
+                    <span>SSO nicht verbunden</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </>
                 )}
@@ -392,7 +390,7 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
         {authMode === 'manual' && step === 'form' && (
           <form onSubmit={handleSendVerification} className="mt-4 space-y-4">
             <p className="text-xs text-slate-600 leading-relaxed">
-              Alternativ kannst du dich mit deiner offiziellen DHBW-E-Mail-Adresse und einem Einmal-Code registrieren.
+              Demo: Es wird keine E-Mail gesendet und keine Identität geprüft. Der unten angezeigte Code ist lokal simuliert; die Registrierung speichert nur ein Demo-Profil im Browser.
             </p>
 
             {errorMessage && (
@@ -526,9 +524,9 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
         {authMode === 'manual' && step === 'verify' && (
           <form onSubmit={handleVerifyCode} className="mt-4 space-y-4">
             <div className="p-3.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-800 text-xs">
-              <div className="font-semibold mb-1">Verifizierungscode gesendet!</div>
+              <div className="font-semibold mb-1">Simulierter Code (nicht gesendet)</div>
               <div>
-                Ein 6-stelliger Bestätigungscode wurde an <strong>{email}</strong> gesendet.
+                Kein Versand an <strong>{email}</strong>. Verwende nur Testdaten in dieser Demo.
               </div>
               <div className="mt-2 text-[11px] font-mono bg-white p-2 rounded border border-sky-200 text-sky-900 flex justify-between items-center">
                 <span>Simulierter Posteingang:</span>
@@ -586,10 +584,10 @@ export const StudentRegistrationModal: React.FC<StudentRegistrationModalProps> =
 
             <div>
               <h4 className="text-base font-bold text-slate-900">
-                Erfolgreich über DHBW Single Sign-On authentifiziert!
+                Demo-Profil erstellt
               </h4>
               <p className="text-xs text-slate-600 mt-1 max-w-sm mx-auto">
-                Deine DHBW-Identität wurde verifiziert und dein Ausweis <code>{rfidUid}</code> ist im System registriert.
+                Es wurde keine DHBW-Identität verifiziert. Der Ausweis <code>{rfidUid}</code> wurde nur in diesem Browser-Demo-Zustand erfasst.
               </p>
             </div>
 
