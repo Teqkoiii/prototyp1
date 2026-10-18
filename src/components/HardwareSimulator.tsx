@@ -23,6 +23,7 @@ interface HardwareSimulatorProps {
   logs: AccessLog[];
   gymState: GymState;
   selectedCampus: Campus;
+  retentionHours: number;
   onScanResult: (result: ReturnType<typeof processDoorScan>) => void;
 }
 
@@ -32,6 +33,7 @@ export const HardwareSimulator: React.FC<HardwareSimulatorProps> = ({
   logs,
   gymState,
   selectedCampus,
+  retentionHours,
   onScanResult,
 }) => {
   const campusStudents = students.filter((s) => s.campusId === selectedCampus.id);
@@ -64,7 +66,8 @@ export const HardwareSimulator: React.FC<HardwareSimulatorProps> = ({
         gymState,
         'rfid_door',
         selectedCampus.id,
-        simulatedDay
+        simulatedDay,
+        retentionHours
       );
       setLastResponse(result.doorResponse);
       setLastApiTrace({
@@ -86,7 +89,7 @@ export const HardwareSimulator: React.FC<HardwareSimulatorProps> = ({
 
     if (meters <= 2.5 && !isCurrentlyCheckedIn) {
       setBleStatusMsg(`Näherung erkannt (${meters.toFixed(1)}m, RSSI: -62 dBm) -> Automatischer Check-In ausgelöst!`);
-      const result = processDoorScan(bleStudent.rfidUid, students, checkIns, logs, gymState, 'ble_beacon');
+      const result = processDoorScan(bleStudent.rfidUid, students, checkIns, logs, gymState, 'ble_beacon', selectedCampus.id, simulatedDay, retentionHours);
       setLastResponse(result.doorResponse);
       setLastApiTrace({
         request: {
@@ -107,7 +110,7 @@ export const HardwareSimulator: React.FC<HardwareSimulatorProps> = ({
       onScanResult(result);
     } else if (meters > 7.0 && isCurrentlyCheckedIn) {
       setBleStatusMsg(`Entfernung erkannt (${meters.toFixed(1)}m, RSSI: -92 dBm) -> Automatischer Check-Out nach Dwell-Timeout!`);
-      const result = processDoorScan(bleStudent.rfidUid, students, checkIns, logs, gymState, 'ble_beacon');
+      const result = processDoorScan(bleStudent.rfidUid, students, checkIns, logs, gymState, 'ble_beacon', selectedCampus.id, simulatedDay, retentionHours);
       setLastResponse(result.doorResponse);
       setLastApiTrace({
         request: {
