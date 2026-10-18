@@ -24,36 +24,53 @@ import { StudentProfileModal } from './components/StudentProfileModal';
 import { Radio, Wifi, Shield, Bell, Check, Sparkles, MapPin, Infinity as InfinityIcon } from 'lucide-react';
 import { useLanguage } from './context/LanguageContext';
 
+
+// Storage is best-effort only. Browser storage is not a secure or shared database.
+function readStoredValue<T>(key: string, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredValue(key: string, value: unknown): void {
+  try {
+    window.localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+  } catch {
+    // Storage may be disabled or full. The current session can continue without persistence.
+  }
+}
+
 export default function App() {
   const { language, t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'hardware' | 'students' | 'concept' | 'dsgvo'>('dashboard');
 
   const [selectedCampusId, setSelectedCampusId] = useState<CampusId>(() => {
-    const saved = localStorage.getItem('dhbw_selected_campus');
-    return (saved as CampusId) || 'dhbw-mgt';
+    const saved = readStoredValue<string>('dhbw_selected_campus', 'dhbw-mgt');
+    const validCampusIds: CampusId[] = ['dhbw-mgt', 'dhbw-mosbach', 'dhbw-heilbronn', 'dhbw-stuttgart'];
+    return validCampusIds.includes(saved as CampusId) ? (saved as CampusId) : 'dhbw-mgt';
   });
 
   const selectedCampus = DHBW_CAMPUSES.find((c) => c.id === selectedCampusId) || DHBW_CAMPUSES[0];
 
-  const [students, setStudents] = useState<Student[]>(() => {
-    const saved = localStorage.getItem('dhbw_gym_students');
-    return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
-  });
+  const [students, setStudents] = useState<Student[]>(() =>
+    readStoredValue<Student[]>('dhbw_gym_students', INITIAL_STUDENTS)
+  );
 
-  const [checkIns, setCheckIns] = useState<ActiveCheckIn[]>(() => {
-    const saved = localStorage.getItem('dhbw_gym_checkins');
-    return saved ? JSON.parse(saved) : INITIAL_CHECKINS;
-  });
+  const [checkIns, setCheckIns] = useState<ActiveCheckIn[]>(() =>
+    readStoredValue<ActiveCheckIn[]>('dhbw_gym_checkins', INITIAL_CHECKINS)
+  );
 
-  const [logs, setLogs] = useState<AccessLog[]>(() => {
-    const saved = localStorage.getItem('dhbw_gym_logs');
-    return saved ? JSON.parse(saved) : INITIAL_ACCESS_LOGS;
-  });
+  const [logs, setLogs] = useState<AccessLog[]>(() =>
+    readStoredValue<AccessLog[]>('dhbw_gym_logs', INITIAL_ACCESS_LOGS)
+  );
 
-  const [gymState, setGymState] = useState<GymState>(() => {
-    const saved = localStorage.getItem('dhbw_gym_state');
-    return saved ? JSON.parse(saved) : INITIAL_GYM_STATE;
-  });
+  const [gymState, setGymState] = useState<GymState>(() =>
+    readStoredValue<GymState>('dhbw_gym_state', INITIAL_GYM_STATE)
+  );
 
   const [currentUserId, setCurrentUserId] = useState<string>(() => students[0]?.id || 'stud-01');
   const currentUser = students.find((s) => s.id === currentUserId) || students[0];
@@ -66,23 +83,23 @@ export default function App() {
 
   // Sync state to local storage
   useEffect(() => {
-    localStorage.setItem('dhbw_selected_campus', selectedCampusId);
+    writeStoredValue('dhbw_selected_campus', selectedCampusId);
   }, [selectedCampusId]);
 
   useEffect(() => {
-    localStorage.setItem('dhbw_gym_students', JSON.stringify(students));
+    writeStoredValue('dhbw_gym_students', students);
   }, [students]);
 
   useEffect(() => {
-    localStorage.setItem('dhbw_gym_checkins', JSON.stringify(checkIns));
+    writeStoredValue('dhbw_gym_checkins', checkIns);
   }, [checkIns]);
 
   useEffect(() => {
-    localStorage.setItem('dhbw_gym_logs', JSON.stringify(logs));
+    writeStoredValue('dhbw_gym_logs', logs);
   }, [logs]);
 
   useEffect(() => {
-    localStorage.setItem('dhbw_gym_state', JSON.stringify(gymState));
+    writeStoredValue('dhbw_gym_state', gymState);
   }, [gymState]);
 
   // Real-time pulse effect (simulating WebSocket telemetry)
@@ -218,7 +235,7 @@ export default function App() {
   const status = calculateOccupancyStatus(currentCampusCheckIns.length, selectedCampus.comfortGuide);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       {/* Toast notification */}
       {toastMessage && (
         <div className="fixed bottom-5 right-5 z-50 bg-slate-900 text-white text-xs px-4 py-3 rounded-xl shadow-lg border border-slate-800 flex items-center gap-2.5 animate-in slide-in-from-bottom-2 duration-200">
@@ -261,6 +278,7 @@ export default function App() {
                 } transition-all duration-300`}
               />
               <span className="text-white font-medium">{selectedCampus.shortName}:</span>
+              <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-amber-300">DEMO</span>
               <span className="text-slate-300 font-mono tabular-nums">{currentCampusCheckIns.length} Personen aktiv</span>
             </div>
             <span className="text-slate-600">·</span>
