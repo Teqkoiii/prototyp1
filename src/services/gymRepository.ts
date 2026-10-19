@@ -1,4 +1,4 @@
-export interface GymSession {
+﻿export interface GymSession {
   identity: 'anonymous-app-profile';
   recoveryConfigured: boolean;
   checkedInAt: string | null;
@@ -7,11 +7,22 @@ export interface GymSession {
   serverTime: string;
 }
 
+export type OccupancyRange = '60m' | '3h' | '24h' | '7d';
+
 export interface OccupancySnapshot {
   count: number;
+  plannedNow: number;
   refreshedAt: string;
   source: 'self-reported-manual-check-ins';
+  disclaimer: string;
   maxCheckInHours: number;
+  history: {
+    range: string;
+    points: Array<{
+      at: string;
+      count: number;
+    }>;
+  };
 }
 
 export interface GymBooking {
@@ -57,7 +68,7 @@ export interface GymAvailability {
 
 export interface GymRepository {
   getSession(): Promise<GymSession>;
-  getOccupancy(): Promise<OccupancySnapshot>;
+  getOccupancy(range?: OccupancyRange): Promise<OccupancySnapshot>;
   setCheckedIn(checkedIn: boolean): Promise<void>;
   getBookings(from?: string, to?: string): Promise<{ slots: SharedBookingSlot[]; capacityConfigured: boolean }>;
   getMyBookings(): Promise<GymBooking[]>;
@@ -128,7 +139,7 @@ export function createGymRepository(fetcher: FetchLike = fetch): GymRepository {
 
   return {
     getSession: () => request<GymSession>('/api/gym/session'),
-    getOccupancy: () => request<OccupancySnapshot>('/api/gym/occupancy'),
+    getOccupancy: (range: OccupancyRange = '24h') => request<OccupancySnapshot>(`/api/gym/occupancy?range=${range}`),
     async setCheckedIn(checkedIn) {
       await request(checkedIn ? '/api/gym/check-in' : '/api/gym/check-out', { method: 'POST' });
     },
@@ -193,3 +204,5 @@ export function createGymRepository(fetcher: FetchLike = fetch): GymRepository {
 }
 
 export const gymRepository = createGymRepository();
+
+

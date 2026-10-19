@@ -56,6 +56,21 @@ export function createGymAppApi(database: DatabaseSync, options: GymApiOptions =
     makeToken: options.makeToken,
   });
 
+  const sampleOccupancy = () => {
+    try {
+      service.getOccupancy('60m');
+    } catch (error) {
+      console.error(
+        '[Occupancy-Sampling]',
+        error instanceof Error ? error.message : error,
+      );
+    }
+  };
+
+  sampleOccupancy();
+  const occupancySamplingTimer = setInterval(sampleOccupancy, 30_000);
+  occupancySamplingTimer.unref();
+
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '12kb', type: 'application/json' }));

@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   --gym-bg: #0b0e12;
   --gym-surface: #12171d;
   --gym-surface-2: #171e26;
@@ -209,4 +209,279 @@
   .form-row-3 .form-field:last-child { grid-column: 1 / -1; }
   .bar-chart { gap: 7px; }
   .chart-label { font-size: 8px; }
+}
+
+/* Studio-Auslastungsverlauf */
+.occupancy-history-panel {
+  margin-top: 14px;
+  min-width: 0;
+  padding: 22px 24px;
+}
+
+.history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.history-heading .panel-label {
+  margin: 0 0 5px;
+  letter-spacing: 0.08em;
+}
+
+.history-heading h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.history-period {
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--gym-border);
+  border-radius: 999px;
+  color: var(--gym-muted);
+  font-size: 11px;
+}
+
+.occupancy-chart {
+  width: 100%;
+  min-width: 0;
+  margin-top: 14px;
+}
+
+.history-empty {
+  padding: 24px 0;
+}
+
+.occupancy-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gym-border);
+}
+
+.occupancy-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--gym-border);
+  border-radius: 12px;
+  background: var(--gym-surface);
+}
+
+.occupancy-summary span {
+  color: var(--gym-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.occupancy-summary strong {
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+@media (max-width: 600px) {
+  .occupancy-history-panel {
+    padding: 18px 16px;
+  }
+
+  .history-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .occupancy-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Studio-Auslastungsverlauf */
+.occupancy-history-panel {
+  min-width: 0;
+  margin-top: 14px;
+  padding: 24px;
+  overflow: hidden;
+}
+
+.history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.history-heading .panel-label {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+}
+
+.history-heading h2 {
+  margin: 0;
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.history-period {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 11px;
+  border: 1px solid var(--gym-border);
+  border-radius: 999px;
+  color: var(--gym-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.occupancy-history-panel > .muted-copy {
+  max-width: 620px;
+  margin-top: 10px;
+  line-height: 1.6;
+}
+
+.occupancy-chart {
+  width: 100%;
+  min-width: 0;
+  height: 220px;
+  margin-top: 16px;
+}
+
+.history-empty {
+  display: flex;
+  align-items: center;
+  min-height: 100px;
+  margin-top: 12px;
+  padding: 18px;
+  border: 1px dashed var(--gym-border);
+  border-radius: 12px;
+  line-height: 1.6;
+}
+
+.occupancy-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--gym-border);
+}
+
+.occupancy-summary > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 15px;
+  border: 1px solid var(--gym-border);
+  border-radius: 14px;
+  background: var(--gym-surface);
+}
+
+.occupancy-summary span {
+  color: var(--gym-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.occupancy-summary strong {
+  font-size: 25px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 600px) {
+  .occupancy-history-panel {
+    padding: 18px 16px;
+  }
+
+  .history-heading {
+    align-items: flex-start;
+  }
+
+  .history-period {
+    padding: 6px 9px;
+  }
+
+  .occupancy-chart {
+    height: 200px;
+    margin-top: 12px;
+  }
+
+  .occupancy-summary {
+    gap: 8px;
+  }
+
+  .occupancy-summary > div {
+    padding: 11px 10px;
+    border-radius: 11px;
+  }
+
+  .occupancy-summary span {
+    font-size: 10px;
+  }
+
+  .occupancy-summary strong {
+    font-size: 22px;
+  }
+}
+
+/* Zeitraum-Auswahl für den Auslastungsverlauf */
+.history-range-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.history-range-button {
+  border: 1px solid var(--gym-border);
+  border-radius: 9px;
+  padding: 7px 10px;
+  background: var(--gym-surface);
+  color: var(--gym-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.history-range-button:hover {
+  border-color: var(--gym-accent);
+  color: var(--gym-text, inherit);
+}
+
+.history-range-button.is-active {
+  border-color: var(--gym-accent);
+  background: var(--gym-surface);
+  color: var(--gym-text, inherit);
+  box-shadow: inset 0 0 0 1px var(--gym-accent);
+  font-weight: 700;
+}
+
+.history-range-button:focus-visible {
+  outline: 2px solid var(--gym-accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 560px) {
+  .history-heading {
+    flex-wrap: wrap;
+  }
+
+  .history-range-controls {
+    justify-content: flex-start;
+  }
 }

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { GymApiError, gymRepository, type GymAvailability, type GymBooking, type GymSession, type OccupancySnapshot, type SharedBookingSlot, type WorkoutLog, type GymVisit } from '../../services/gymRepository';
+﻿import { useCallback, useEffect, useState } from 'react';
+import { GymApiError, gymRepository, type GymAvailability, type GymBooking, type GymSession, type OccupancySnapshot, type OccupancyRange, type SharedBookingSlot, type WorkoutLog, type GymVisit } from '../../services/gymRepository';
 import { AppFrame, InlineNotice, type GymPage } from './components';
 import { Dashboard } from './Dashboard';
 import { Calendar } from './Calendar';
@@ -17,6 +17,7 @@ export function GymApp() {
   const [toast, setToast] = useState<string | null>(null);
   const [session, setSession] = useState<GymSession | null>(null);
   const [occupancy, setOccupancy] = useState<OccupancySnapshot | null>(null);
+  const [occupancyRange, setOccupancyRange] = useState<OccupancyRange>('24h');
   const [bookings, setBookings] = useState<GymBooking[]>([]);
   const [sharedSlots, setSharedSlots] = useState<SharedBookingSlot[]>([]);
   const [visits, setVisits] = useState<GymVisit[]>([]);
@@ -28,7 +29,7 @@ export function GymApp() {
     try {
       const currentSession = await gymRepository.getSession();
       const [currentOccupancy, shared, mine, currentVisits, currentWorkouts, currentGoal] = await Promise.all([
-        gymRepository.getOccupancy(),
+        gymRepository.getOccupancy(occupancyRange),
         gymRepository.getBookings(),
         gymRepository.getMyBookings(),
         gymRepository.getVisits(),
@@ -50,12 +51,12 @@ export function GymApp() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [occupancyRange]);
 
   const refreshOccupancy = useCallback(async () => {
     try {
       const [current, currentSession, shared] = await Promise.all([
-        gymRepository.getOccupancy(),
+        gymRepository.getOccupancy(occupancyRange),
         gymRepository.getSession(),
         gymRepository.getBookings(),
       ]);
@@ -67,7 +68,7 @@ export function GymApp() {
       setOnline(false);
       setError(errorMessage(caught));
     }
-  }, []);
+  }, [occupancyRange]);
 
   useEffect(() => {
     void refreshAll();
@@ -124,7 +125,7 @@ export function GymApp() {
 
   const handleDeleteWorkout = useCallback((id: string) => runMutation(
     () => gymRepository.deleteWorkout(id),
-    'Training gelöscht.',
+    'Training gelÃ¶scht.',
   ), [runMutation]);
 
   const handleGoal = useCallback((value: number) => runMutation(
@@ -155,30 +156,30 @@ export function GymApp() {
 
   const handleRecover = useCallback((code: string) => runMutation(
     () => gymRepository.recoverProfile(code),
-    'Profil wiederhergestellt. Deine Serverdaten sind wieder verfügbar.',
+    'Profil wiederhergestellt. Deine Serverdaten sind wieder verfÃ¼gbar.',
   ), [runMutation]);
 
   const handleDeleteData = useCallback(() => {
-    if (!window.confirm('Alle deine Trainingsdaten, Reservierungen, Ziele und die Besuchshistorie wirklich löschen?')) return;
+    if (!window.confirm('Alle deine Trainingsdaten, Reservierungen, Ziele und die Besuchshistorie wirklich lÃ¶schen?')) return;
     void runMutation(async () => {
       await gymRepository.deletePersonalData();
       setPage('dashboard');
-    }, 'Deine persönlichen App-Daten wurden gelöscht.');
+    }, 'Deine persÃ¶nlichen App-Daten wurden gelÃ¶scht.');
   }, [runMutation]);
 
   if (loading) {
-    return <div className="app-loading" role="status"><span className="loading-mark" /><p>Gym Hub wird verbunden …</p></div>;
+    return <div className="app-loading" role="status"><span className="loading-mark" /><p>Gym Hub wird verbunden â€¦</p></div>;
   }
 
   return (
     <AppFrame page={page} onNavigate={setPage}>
-      {!online && <InlineNotice tone="warning">Der Gym-Server ist nicht erreichbar. Angezeigte Daten können veraltet sein; Check-in, Reservierungen und Speichern sind derzeit deaktiviert.</InlineNotice>}
-      {page === 'dashboard' && <Dashboard session={session} occupancy={occupancy} bookings={bookings} workouts={workouts} online={online} busy={busy} error={error} onPresence={handlePresence} onNavigate={setPage} />}
+      {!online && <InlineNotice tone="warning">Der Gym-Server ist nicht erreichbar. Angezeigte Daten kÃ¶nnen veraltet sein; Check-in, Reservierungen und Speichern sind derzeit deaktiviert.</InlineNotice>}
+      {page === 'dashboard' && <Dashboard session={session} occupancy={occupancy} occupancyRange={occupancyRange} onOccupancyRangeChange={setOccupancyRange} bookings={bookings} workouts={workouts} online={online} busy={busy} error={error} onPresence={handlePresence} onNavigate={setPage} />}
       {page === 'calendar' && <Calendar bookings={bookings} sharedSlots={sharedSlots} visits={visits} availability={availability} online={online} busy={busy} error={error} onCreateBooking={handleCreateBooking} onDeleteBooking={handleDeleteBooking} onCheckAvailability={handleAvailability} />}
       {page === 'training' && <Training workouts={workouts} busy={busy} error={error} online={online} onCreate={handleCreateWorkout} onDelete={handleDeleteWorkout} />}
       {page === 'progress' && <Progress workouts={workouts} weeklyGoal={weeklyGoal} busy={busy} error={error} online={online} onUpdateGoal={handleGoal} />}
       {page === 'profile' && <Profile session={session} online={online} busy={busy} error={error} onCreateRecoveryCode={handleIssueRecoveryCode} onRecover={handleRecover} onDeleteData={handleDeleteData} />}
-      <footer className="gym-footer"><span>Manuelle App-Check-ins · keine DHBW-Scannerverbindung</span><span>Belegung aktualisiert automatisch alle 15 Sekunden</span></footer>
+      <footer className="gym-footer"><span>Manuelle App-Check-ins Â· keine DHBW-Scannerverbindung</span><span>Belegung aktualisiert automatisch alle 15 Sekunden</span></footer>
       <div className="toast-region" aria-live="polite" aria-atomic="true">{toast && <div className="toast-message">{toast}</div>}</div>
     </AppFrame>
   );
@@ -190,7 +191,8 @@ function errorMessage(error: unknown): string {
     if (error.status === 409) return 'Diese Zeit hast du bereits geplant.';
     if (error.status === 401) return 'Deine Sitzung ist abgelaufen. Bitte lade die App neu oder stelle dein Profil wieder her.';
     if (error.status === 429) return 'Zu viele Wiederherstellungsversuche. Bitte warte kurz und versuche es erneut.';
-    if (error.status === 400) return 'Bitte prüfe die eingegebenen Daten.';
+    if (error.status === 400) return 'Bitte prÃ¼fe die eingegebenen Daten.';
   }
   return 'Das hat gerade nicht funktioniert. Bitte versuche es noch einmal.';
 }
+
