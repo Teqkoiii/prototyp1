@@ -19,7 +19,6 @@ export function GymApp() {
   const [occupancy, setOccupancy] = useState<OccupancySnapshot | null>(null);
   const [bookings, setBookings] = useState<GymBooking[]>([]);
   const [sharedSlots, setSharedSlots] = useState<SharedBookingSlot[]>([]);
-  const [capacityConfigured, setCapacityConfigured] = useState(false);
   const [visits, setVisits] = useState<GymVisit[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutLog[]>([]);
   const [weeklyGoal, setWeeklyGoal] = useState(3);
@@ -39,7 +38,6 @@ export function GymApp() {
       setSession(currentSession);
       setOccupancy(currentOccupancy);
       setSharedSlots(shared.slots);
-      setCapacityConfigured(shared.capacityConfigured);
       setBookings(mine);
       setVisits(currentVisits);
       setWorkouts(currentWorkouts);
@@ -64,7 +62,6 @@ export function GymApp() {
       setOccupancy(current);
       setSession(currentSession);
       setSharedSlots(shared.slots);
-      setCapacityConfigured(shared.capacityConfigured);
       setOnline(true);
     } catch (caught) {
       setOnline(false);
@@ -177,7 +174,7 @@ export function GymApp() {
     <AppFrame page={page} onNavigate={setPage}>
       {!online && <InlineNotice tone="warning">Der Gym-Server ist nicht erreichbar. Angezeigte Daten können veraltet sein; Check-in, Reservierungen und Speichern sind derzeit deaktiviert.</InlineNotice>}
       {page === 'dashboard' && <Dashboard session={session} occupancy={occupancy} bookings={bookings} workouts={workouts} online={online} busy={busy} error={error} onPresence={handlePresence} onNavigate={setPage} />}
-      {page === 'calendar' && <Calendar bookings={bookings} sharedSlots={sharedSlots} visits={visits} availability={availability} capacityConfigured={capacityConfigured} online={online} busy={busy} error={error} onCreateBooking={handleCreateBooking} onDeleteBooking={handleDeleteBooking} onCheckAvailability={handleAvailability} />}
+      {page === 'calendar' && <Calendar bookings={bookings} sharedSlots={sharedSlots} visits={visits} availability={availability} online={online} busy={busy} error={error} onCreateBooking={handleCreateBooking} onDeleteBooking={handleDeleteBooking} onCheckAvailability={handleAvailability} />}
       {page === 'training' && <Training workouts={workouts} busy={busy} error={error} online={online} onCreate={handleCreateWorkout} onDelete={handleDeleteWorkout} />}
       {page === 'progress' && <Progress workouts={workouts} weeklyGoal={weeklyGoal} busy={busy} error={error} online={online} onUpdateGoal={handleGoal} />}
       {page === 'profile' && <Profile session={session} online={online} busy={busy} error={error} onCreateRecoveryCode={handleIssueRecoveryCode} onRecover={handleRecover} onDeleteData={handleDeleteData} />}
@@ -190,7 +187,7 @@ export function GymApp() {
 function errorMessage(error: unknown): string {
   if (error instanceof GymApiError) {
     if (error.status === 0) return error.message;
-    if (error.status === 409) return 'Für diese Zeit sind keine reservierbaren Plätze mehr frei.';
+    if (error.status === 409) return 'Diese Zeit hast du bereits geplant.';
     if (error.status === 401) return 'Deine Sitzung ist abgelaufen. Bitte lade die App neu oder stelle dein Profil wieder her.';
     if (error.status === 429) return 'Zu viele Wiederherstellungsversuche. Bitte warte kurz und versuche es erneut.';
     if (error.status === 400) return 'Bitte prüfe die eingegebenen Daten.';

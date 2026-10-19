@@ -27,7 +27,6 @@ export function Calendar({
   sharedSlots,
   visits,
   availability,
-  capacityConfigured,
   online,
   busy,
   error,
@@ -39,7 +38,6 @@ export function Calendar({
   sharedSlots: SharedBookingSlot[];
   visits: GymVisit[];
   availability: GymAvailability | null;
-  capacityConfigured: boolean;
   online: boolean;
   busy: boolean;
   error: string | null;
@@ -76,10 +74,9 @@ export function Calendar({
             <Field label="Datum und Uhrzeit"><input className="text-input" type="datetime-local" value={startsAt} min={localDateTimeValue(new Date())} onChange={(event) => setStartsAt(event.target.value)} required /></Field>
             <Field label="Dauer"><select className="text-input" value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 Minuten</option><option value={60}>1 Stunde</option><option value={90}>1,5 Stunden</option><option value={120}>2 Stunden</option></select></Field>
             <Field label="Titel (optional)"><input className="text-input" maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="z. B. Oberkörper" /></Field>
-            {capacityConfigured && availability && <InlineNotice tone={availability.availablePlaces === 0 ? 'warning' : 'success'}>{availability.reserved} von {availability.capacity} Plätzen belegt · {availability.availablePlaces} verfügbar</InlineNotice>}
-            {!capacityConfigured && <InlineNotice>Reservierungen werden geteilt. Die Raumkapazität ist noch nicht konfiguriert, daher werden freie Plätze nicht ausgewiesen.</InlineNotice>}
+            {availability && <InlineNotice>{availability.reserved === 0 ? 'Für diese Zeit gibt es noch keine geteilten Reservierungen.' : `${availability.reserved} Reservierung${availability.reserved === 1 ? '' : 'en'} in diesem Zeitraum. Reservierungen sind jederzeit möglich, es gibt keine Teilnehmergrenze.`}</InlineNotice>}
             {error && <InlineNotice tone="error">{error}</InlineNotice>}
-            <button className="button button-primary full-width" type="submit" disabled={!online || busy || (capacityConfigured && !availability) || (availability?.availablePlaces === 0)}><CalendarClock size={17} aria-hidden="true" />Zeit reservieren</button>
+            <button className="button button-primary full-width" type="submit" disabled={!online || busy}><CalendarClock size={17} aria-hidden="true" />Zeit reservieren</button>
             <p className="field-hint">App-Reservierung · nicht mit dem DHBW-Türsystem oder einer Zutrittsberechtigung verbunden.</p>
           </form>
         </section>
@@ -94,7 +91,7 @@ export function Calendar({
         <section className="surface calendar-list-panel">
           <SectionTitle title="Gemeinsame Reservierungen" />
           <p className="muted-copy section-intro">Es werden nur Zeitfenster und Anzahl angezeigt, keine Namen.</p>
-          {sharedSlots.length ? <ul className="event-list">{sharedSlots.slice(0, 10).map((slot) => <li key={`${slot.startsAt}-${slot.endsAt}`} className="event-row"><span className="event-date-icon"><Clock3 size={17} aria-hidden="true" /></span><div className="event-content"><strong>{formatDateTime(slot.startsAt)}</strong><span>{slot.reserved} Reservierung{slot.reserved === 1 ? '' : 'en'}{slot.capacity !== null ? ` · ${slot.availablePlaces} Plätze frei` : ' · Kapazität unbekannt'}</span></div></li>)}</ul> : <p className="muted-copy">Im gewählten Zeitraum gibt es noch keine Reservierungen.</p>}
+          {sharedSlots.length ? <ul className="event-list">{sharedSlots.slice(0, 10).map((slot) => <li key={`${slot.startsAt}-${slot.endsAt}`} className="event-row"><span className="event-date-icon"><Clock3 size={17} aria-hidden="true" /></span><div className="event-content"><strong>{formatDateTime(slot.startsAt)}</strong><span>{slot.reserved} Reservierung{slot.reserved === 1 ? '' : 'en'}</span></div></li>)}</ul> : <p className="muted-copy">Im gewählten Zeitraum gibt es noch keine Reservierungen.</p>}
         </section>
         <section className="surface calendar-list-panel">
           <SectionTitle title="Vergangene Gym-Besuche" />

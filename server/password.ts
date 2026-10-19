@@ -1,7 +1,14 @@
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
+import { randomBytes, scrypt as scryptCallback, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 
-const scrypt = promisify(scryptCallback);
+// util.promisify only sees the last scrypt overload (without options), so the options-aware wrapper is typed explicitly.
+function scrypt(password: string, salt: Buffer, keyLength: number, options: ScryptOptions): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scryptCallback(password, salt, keyLength, options, (error, derivedKey) => {
+      if (error) reject(error);
+      else resolve(derivedKey);
+    });
+  });
+}
 const KEY_LENGTH = 32;
 const N = 16384;
 const R = 8;
@@ -9,7 +16,7 @@ const P = 1;
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const derived = await scrypt(password, salt, KEY_LENGTH, { N, r: R, p: P }) as Buffer;
+  const derived = await scrypt(password, salt, KEY_LENGTH, { N, r: R, p: P });
   return `scrypt$${N}$${R}$${P}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
 }
 
@@ -24,7 +31,7 @@ export async function verifyPassword(password: string, encoded: string): Promise
     const salt = Buffer.from(parts[4], 'base64url');
     const expected = Buffer.from(parts[5], 'base64url');
     if (salt.length < 8 || expected.length !== KEY_LENGTH) return false;
-    const derived = await scrypt(password, salt, expected.length, { N: n, r, p }) as Buffer;
+    const derived = await scrypt(password, salt, expected.length, { N: n, r, p });
     if (derived.length !== expected.length) return false;
     return timingSafeEqual(derived, expected);
   } catch {

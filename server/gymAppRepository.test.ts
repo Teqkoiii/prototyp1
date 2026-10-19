@@ -48,7 +48,7 @@ test('database check-in expiry closes a visit and removes it from occupancy', ()
   database.close();
 });
 
-test('reservation capacity is checked against overlapping intervals in an atomic database transaction', () => {
+test('bookings are never rejected for overlapping intervals; only an identical planned slot of the same profile is a duplicate', () => {
   const database = new DatabaseSync(':memory:');
   const repository = new GymAppRepository(database);
   const now = '2026-10-19T09:00:00.000Z';
@@ -60,22 +60,28 @@ test('reservation capacity is checked against overlapping intervals in an atomic
   const overlapping = {
     id: 'booking-b', startsAt: '2026-10-20T09:30:00.000Z', endsAt: '2026-10-20T10:30:00.000Z', title: '',
   };
-  assert.deepEqual(repository.createBooking(firstPrincipal, first, now, 1), {
-    reserved: 1, capacity: 1, availablePlaces: 0,
-  });
-  assert.equal(repository.createBooking(secondPrincipal, overlapping, now, 1), null);
   const adjacent = {
     id: 'booking-c', startsAt: '2026-10-20T10:00:00.000Z', endsAt: '2026-10-20T11:00:00.000Z', title: '',
   };
-  assert.deepEqual(repository.createBooking(secondPrincipal, adjacent, now, 1), {
-    reserved: 1, capacity: 1, availablePlaces: 0,
+  assert.deepEqual(repository.createBooking(firstPrincipal, first, now), {
+    availability: { reserved: 1, capacity: null, availablePlaces: null },
   });
+  assert.deepEqual(repository.createBooking(secondPrincipal, overlapping, now), {
+    availability: { reserved: 2, capacity: null, availablePlaces: null },
+  });
+  assert.deepEqual(repository.createBooking(secondPrincipal, adjacent, now), {
+    availability: { reserved: 2, capacity: null, availablePlaces: null },
+  });
+  assert.deepEqual(repository.createBooking(secondPrincipal, { ...first, id: 'booking-d' }, now), {
+    availability: { reserved: 3, capacity: null, availablePlaces: null },
+  });
+  assert.deepEqual(repository.createBooking(firstPrincipal, { ...first, id: 'booking-e' }, now), { duplicate: true });
   assert.equal(repository.listMyBookings(firstPrincipal).length, 1);
-  assert.equal(repository.listMyBookings(secondPrincipal).length, 1);
+  assert.equal(repository.listMyBookings(secondPrincipal).length, 3);
   database.close();
 });
 
-test('shared reservation slots count every overlapping reservation when showing remaining places', () => {
+test('shared reservation slots count every overlapping reservation without exposing a place limit', () => {
   const database = new DatabaseSync(':memory:');
   const repository = new GymAppRepository(database);
   const now = '2026-10-19T09:00:00.000Z';
@@ -83,17 +89,17 @@ test('shared reservation slots count every overlapping reservation when showing 
   const secondPrincipal = createPrincipal(repository, 'overlap-b', now);
   repository.createBooking(firstPrincipal, {
     id: 'overlap-one', startsAt: '2026-10-20T09:00:00.000Z', endsAt: '2026-10-20T10:00:00.000Z', title: '',
-  }, now, 5);
+  }, now);
   repository.createBooking(secondPrincipal, {
     id: 'overlap-two', startsAt: '2026-10-20T09:30:00.000Z', endsAt: '2026-10-20T10:00:00.000Z', title: '',
-  }, now, 5);
-  const slots = repository.listBookingSlots('2026-10-20T00:00:00.000Z', '2026-10-21T00:00:00.000Z', 5);
+  }, now);
+  const slots = repository.listBookingSlots('2026-10-20T00:00:00.000Z', '2026-10-21T00:00:00.000Z');
   assert.equal(slots.length, 2);
-  assert.deepEqual(slots.map((slot) => [slot.reserved, slot.availablePlaces]), [[2, 3], [2, 3]]);
+  assert.deepEqual(slots.map((slot) => [slot.reserved, slot.capacity, slot.availablePlaces]), [[2, null, null], [2, null, null]]);
   database.close();
 });
 
-test('simultaneous database workers cannot oversubscribe the same reservation interval', async () => {
+test('simultaneous database workers can both book the same interval because bookings are never capacity-limited', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'gym-app-db-test-'));
   const path = join(directory, 'gym.sqlite3');
   const setupDatabase = new DatabaseSync(path);
@@ -111,7 +117,6 @@ test('simultaneous database workers cannot oversubscribe the same reservation in
   ].map((item) => ({ ...item, startsAt, endsAt, now, barrier }));
   const workers = inputs.map((workerData) => new Worker(new URL('./gymAppBookingWorker.ts', import.meta.url), {
     workerData,
-    execArgv: ['--import', 'tsx'],
   }));
   const waitForMessage = (worker: Worker, type: string) => new Promise<Record<string, unknown>>((resolve, reject) => {
     const handleMessage = (message: Record<string, unknown>) => {
@@ -135,12 +140,12 @@ test('simultaneous database workers cannot oversubscribe the same reservation in
     Atomics.store(new Int32Array(barrier), 0, 1);
     Atomics.notify(new Int32Array(barrier), 0, workers.length);
     const replies = await Promise.all(results);
-    assert.equal(replies.filter((reply) => reply.created === true).length, 1);
-    assert.equal(replies.filter((reply) => reply.created === false).length, 1);
+    assert.equal(replies.filter((reply) => reply.created === true).length, 2);
+    assert.equal(replies.filter((reply) => reply.created === false).length, 0);
 
     const verifyDatabase = new DatabaseSync(path);
     const verifyRepository = new GymAppRepository(verifyDatabase);
-    assert.equal(verifyRepository.availability(startsAt, endsAt, 1).reserved, 1);
+    assert.equal(verifyRepository.availability(startsAt, endsAt).reserved, 2);
     verifyDatabase.close();
   } finally {
     await Promise.all(workers.map((worker) => worker.terminate()));

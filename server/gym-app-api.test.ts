@@ -4,9 +4,9 @@ import test, { type TestContext } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { createGymAppApi } from './gym-app-api';
 
-async function startApi(t: TestContext, reservationCapacity: number | null = null, options: { secureCookies?: boolean; allowedOrigins?: string[] } = {}) {
+async function startApi(t: TestContext, options: { secureCookies?: boolean; allowedOrigins?: string[] } = {}) {
   const database = new DatabaseSync(':memory:');
-  const server = createServer(createGymAppApi(database, { reservationCapacity, secureCookies: options.secureCookies ?? false, allowedOrigins: options.allowedOrigins }));
+  const server = createServer(createGymAppApi(database, { secureCookies: options.secureCookies ?? false, allowedOrigins: options.allowedOrigins }));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
@@ -59,8 +59,8 @@ test('manual check-in is shared, idempotent, and scoped to the server session', 
   assert.ok(visits[0]?.checkedOutAt);
 });
 
-test('reservations are shared as aggregate slots and private records cannot be accessed across profiles', async (t) => {
-  const { baseUrl } = await startApi(t, 1);
+test('reservations are shared as aggregate slots, never limited by capacity, and private records cannot be accessed across profiles', async (t) => {
+  const { baseUrl } = await startApi(t);
   const owner = await createAnonymousClient(baseUrl);
   const other = await createAnonymousClient(baseUrl);
   const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -75,13 +75,22 @@ test('reservations are shared as aggregate slots and private records cannot be a
     slots: Array<{ reserved: number; availablePlaces: number | null }>;
   };
   assert.equal(shared.slots[0]?.reserved, 1);
-  assert.equal(shared.slots[0]?.availablePlaces, 0);
+  assert.equal(shared.slots[0]?.availablePlaces, null);
   assert.equal((await other.request('/api/gym/my/bookings').then((response) => response.json()) as { bookings: unknown[] }).bookings.length, 0);
   assert.equal((await other.request(`/api/gym/my/bookings/${booking.id}`, { method: 'DELETE' })).status, 404);
-  assert.equal((await other.request('/api/gym/bookings', {
+  const otherBooking = await other.request('/api/gym/bookings', {
     method: 'POST',
     body: JSON.stringify({ startsAt, durationMinutes: 60 }),
-  })).status, 409);
+  });
+  assert.equal(otherBooking.status, 201, 'a second profile must be able to book the same time');
+  const afterOther = await otherBooking.json() as { reserved: number; capacity: number | null; availablePlaces: number | null };
+  assert.equal(afterOther.reserved, 2);
+  assert.equal(afterOther.capacity, null);
+  assert.equal(afterOther.availablePlaces, null);
+  assert.equal((await owner.request('/api/gym/bookings', {
+    method: 'POST',
+    body: JSON.stringify({ startsAt, durationMinutes: 60 }),
+  })).status, 409, 'only the same profile booking the identical slot twice is a duplicate');
 });
 
 test('workouts and goals persist per anonymous profile and can be deleted by their owner', async (t) => {
@@ -152,7 +161,7 @@ test('recovery code restores the same server profile once and rotates the active
   })).status, 401);
 });
 
-test('availability stays explicitly unknown when the gym capacity has not been configured', async (t) => {
+test('availability never reports a capacity or place limit', async (t) => {
   const { baseUrl } = await startApi(t);
   const client = await createAnonymousClient(baseUrl);
   const startsAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
@@ -167,7 +176,7 @@ test('availability stays explicitly unknown when the gym capacity has not been c
 
 test('cross-origin mobile API access requires an exact allowlist and secure cookies', async (t) => {
   const allowedOrigin = 'capacitor://localhost';
-  const { baseUrl } = await startApi(t, null, { secureCookies: true, allowedOrigins: [allowedOrigin] });
+  const { baseUrl } = await startApi(t, { secureCookies: true, allowedOrigins: [allowedOrigin] });
   const session = await fetch(`${baseUrl}/api/gym/session`, { headers: { Origin: allowedOrigin } });
   assert.equal(session.status, 200);
   assert.equal(session.headers.get('access-control-allow-origin'), allowedOrigin);

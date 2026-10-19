@@ -1,6 +1,10 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { DatabaseSync } from 'node:sqlite';
-import { GymAppRepository } from './gymAppRepository';
+import { register } from 'tsx/esm/api';
+
+// Worker threads do not reliably inherit the TypeScript loader, so register it here before loading TypeScript sources.
+register();
+const { GymAppRepository } = await import('./gymAppRepository');
 
 interface BookingWorkerData {
   databasePath: string;
