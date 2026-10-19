@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Clock3, LogIn, LogOut, Users } from 'lucide-react';
+﻿import { ArrowRight, Check, Clock3, LogIn, LogOut, Users } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import type { GymBooking, GymSession, OccupancySnapshot, OccupancyRange, WorkoutLog } from '../../services/gymRepository';
 import { calculateWorkoutVolume, formatDateTime, formatTime, getThisWeekWorkouts } from './format';
@@ -36,7 +36,7 @@ export function Dashboard({
 
   return (
     <>
-      <PageHeading eyebrow="DHBW GYM HUB" title="Dein Gym, auf einen Blick" description="Belegung, Trainingsplanung und dein persÃ¶nlicher Fortschritt." />
+      <PageHeading eyebrow="DHBW GYM HUB" title="Dein Gym, auf einen Blick" description="Belegung, Trainingsplanung und dein persönlicher Fortschritt." />
 
       {error && <InlineNotice tone="error">{error}</InlineNotice>}
 
@@ -44,19 +44,19 @@ export function Dashboard({
         <article className="surface occupancy-panel">
           <div className="panel-topline"><span className="icon-badge"><Users size={18} aria-hidden="true" /></span><span className={`connection-state ${online ? 'is-online' : ''}`}><span aria-hidden="true" />{online ? 'Backend verbunden' : 'Keine Verbindung'}</span></div>
           <p className="panel-label">Aktuell eingecheckt</p>
-          {online && occupancy ? <p className="occupancy-number" aria-live="polite">{occupancy.count}<span> Personen</span></p> : <p className="occupancy-unavailable">{online ? 'Wird geladen â€¦' : 'Gerade nicht verfÃ¼gbar'}</p>}
-          <p className="muted-copy">{occupancy ? `Aktualisiert ${formatTime(occupancy.refreshedAt)} Â· manuelle Meldungen` : 'Die Zahl stammt aus Check-ins in dieser App.'}</p>
-          <div className="source-note">Nicht mit dem DHBW-TÃ¼rsystem verbunden</div>
+          {online && occupancy ? <p className="occupancy-number" aria-live="polite">{occupancy.count}<span> Personen</span></p> : <p className="occupancy-unavailable">{online ? 'Wird geladen â€¦' : 'Gerade nicht verfügbar'}</p>}
+          <p className="muted-copy">{occupancy ? `Aktualisiert ${formatTime(occupancy.refreshedAt)} · manuelle Meldungen` : 'Die Zahl stammt aus Check-ins in dieser App.'}</p>
+          <div className="source-note">Nicht mit dem DHBW-Türsystem verbunden</div>
         </article>
 
         <article className={`surface presence-panel ${checkedIn ? 'is-present' : ''}`}>
           <div className="panel-topline"><span className="icon-badge">{checkedIn ? <Check size={18} aria-hidden="true" /> : <Clock3 size={18} aria-hidden="true" />}</span><span className="panel-label">Dein Status</span></div>
           <h2>{checkedIn ? 'Du bist eingecheckt' : 'Noch nicht eingecheckt'}</h2>
-          <p className="muted-copy">{checkedIn && session?.checkedInAt ? `Seit ${formatTime(session.checkedInAt)} Â· endet automatisch nach ${session.maxCheckInHours} Stunden` : 'Mit einem Tipp meldest du dich in der gemeinsamen Belegung an.'}</p>
+          <p className="muted-copy">{checkedIn && session?.checkedInAt ? `Seit ${formatTime(session.checkedInAt)} · endet automatisch nach ${session.maxCheckInHours} Stunden` : 'Mit einem Tipp meldest du dich in der gemeinsamen Belegung an.'}</p>
           <button type="button" className={`button ${checkedIn ? 'button-secondary' : 'button-primary'} presence-button`} disabled={!online || busy} onClick={() => onPresence(!checkedIn)}>
             {checkedIn ? <><LogOut size={17} aria-hidden="true" />Ich gehe</> : <><LogIn size={17} aria-hidden="true" />Ich bin drin</>}
           </button>
-          {!online && <p className="field-hint">Check-in ist verfÃ¼gbar, sobald die Verbindung wiederhergestellt ist.</p>}
+          {!online && <p className="field-hint">Check-in ist verfügbar, sobald die Verbindung wiederhergestellt ist.</p>}
         </article>
       </section>
 
