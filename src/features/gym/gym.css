@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --gym-bg: #0b0e12;
   --gym-surface: #12171d;
   --gym-surface-2: #171e26;
@@ -483,5 +483,147 @@
 
   .history-range-controls {
     justify-content: flex-start;
+  }
+}
+
+/* Übersichtliche Übungsauswahl */
+.muscle-group-picker { display: flex; flex-direction: column; gap: 10px; }
+.muscle-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.muscle-group-hint { color: var(--gym-dim); font-size: 10px; }
+.muscle-group-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.muscle-group-card { display: flex; min-width: 0; min-height: 68px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 5px; border: 1px solid var(--gym-border); border-radius: 11px; padding: 12px; color: var(--gym-text); background: var(--gym-surface-2); text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.muscle-group-card:hover { border-color: #53645a; background: #1b2429; }
+.muscle-group-card.is-selected { border-color: var(--gym-accent); background: rgba(142, 189, 156, .09); box-shadow: inset 0 0 0 1px rgba(142, 189, 156, .12); }
+.muscle-group-card-name { font-size: 12px; font-weight: 650; }
+.muscle-group-card-count { color: var(--gym-muted); font-size: 10px; }
+.exercise-results { display: flex; flex-direction: column; gap: 10px; }
+.exercise-results-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.06); }
+.exercise-results-heading h4 { margin: 0; color: var(--gym-text); font-size: 12px; font-weight: 650; }
+.exercise-results-heading > span { color: var(--gym-muted); font-size: 10px; }
+.exercise-library-options { display: flex; flex-direction: column; gap: 6px; }
+.exercise-option { display: flex; width: 100%; min-height: 52px; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; text-align: left; }
+.exercise-option > span { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.exercise-option strong { font-size: 12px; font-weight: 600; }
+.exercise-option small { color: var(--gym-muted); font-size: 10px; }
+.custom-exercise-row { display: flex; align-items: flex-end; gap: 9px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.06); }
+.custom-exercise-row .form-field { flex: 1; }
+@media (max-width: 390px) {
+  .muscle-group-grid { gap: 6px; }
+  .muscle-group-card { min-height: 62px; padding: 10px; }
+  .custom-exercise-row { align-items: stretch; flex-direction: column; }
+}
+/* Status bereits hinzugefügter Übungen */
+.exercise-option.is-added { border-color: rgba(142, 189, 156, .55); background: rgba(142, 189, 156, .08); }
+.exercise-option.is-added > svg { color: var(--gym-accent); }
+.exercise-option:focus-visible, .muscle-group-card:focus-visible { outline: 2px solid var(--gym-accent); outline-offset: 2px; }
+
+/* Modernisierte Trainingskarten */
+.exercise-drafts {
+  gap: 14px;
+}
+
+.exercise-draft {
+  min-width: 0;
+  border: 1px solid rgba(142, 189, 156, .2);
+  border-radius: 16px;
+  padding: 15px;
+  background: linear-gradient(145deg, rgba(255,255,255,.035), rgba(255,255,255,.012));
+  transition: border-color .18s ease, background .18s ease;
+}
+
+.exercise-draft:focus-within {
+  border-color: rgba(142, 189, 156, .55);
+  background: rgba(142, 189, 156, .035);
+}
+
+.exercise-draft-header {
+  margin-bottom: 14px;
+  color: var(--gym-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.exercise-draft-header > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.exercise-draft-header .icon-button {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 120, 120, .18);
+  border-radius: 10px;
+}
+
+.exercise-draft .form-row-3 {
+  gap: 12px;
+  margin-top: 0;
+}
+
+.exercise-draft .field-label {
+  margin-bottom: 2px;
+  color: var(--gym-muted);
+  font-size: 11px;
+}
+
+.exercise-draft .text-input {
+  min-height: 46px;
+  border-radius: 11px;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.exercise-draft .field-hint {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.06);
+  font-size: 11px;
+}
+
+.exercise-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  border: 1px dashed var(--gym-border-strong);
+  border-radius: 16px;
+  padding: 28px 18px;
+  text-align: center;
+}
+
+.exercise-empty > svg {
+  color: var(--gym-accent);
+}
+
+.exercise-empty strong {
+  color: var(--gym-text);
+  font-size: 14px;
+}
+
+.exercise-empty p {
+  max-width: 320px;
+  margin: 0;
+  color: var(--gym-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 520px) {
+  .exercise-draft {
+    padding: 12px;
+  }
+
+  .exercise-draft .form-row-3 {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .exercise-draft .form-row-3 .form-field:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .exercise-draft .text-input {
+    min-height: 48px;
   }
 }

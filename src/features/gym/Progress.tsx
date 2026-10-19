@@ -18,6 +18,44 @@ export function Progress({ workouts, weeklyGoal, busy, error, online, onUpdateGo
   const volume = calculateWorkoutVolume(weekWorkouts);
   const counts = getWeeklyWorkoutCounts(workouts);
   const maxCount = Math.max(1, ...counts);
+  const exerciseProgress = (() => {
+    const byExercise = new Map<string, Array<{ date: number; weight: number; workoutTitle: string }>>();
+
+    for (const workout of workouts) {
+      const date = new Date(workout.occurredAt).getTime();
+      if (!Number.isFinite(date)) continue;
+
+      for (const exercise of workout.exercises) {
+        const name = exercise.name.trim();
+        const weights = exercise.sets
+          .map((set) => set.weightKg)
+          .filter((weight) => Number.isFinite(weight) && weight >= 0);
+
+        if (!name || weights.length === 0) continue;
+
+        const key = name.toLocaleLowerCase('de-DE');
+        const entries = byExercise.get(key) ?? [];
+        entries.push({
+          date,
+          weight: Math.max(...weights),
+          workoutTitle: workout.title,
+        });
+        byExercise.set(key, entries);
+      }
+    }
+
+    return Array.from(byExercise.entries())
+      .map(([key, entries]) => {
+        const sorted = [...entries].sort((a, b) => a.date - b.date);
+        const latest = sorted[sorted.length - 1];
+        const previous = sorted.length > 1 ? sorted[sorted.length - 2] : null;
+        return { key, name: workouts.flatMap((w) => w.exercises).find(
+          (exercise) => exercise.name.trim().toLocaleLowerCase('de-DE') === key,
+        )?.name.trim() ?? key, latest, previous, sessions: sorted.length };
+      })
+      .sort((a, b) => b.latest.date - a.latest.date);
+  })();
+
   const weekStart = startOfLocalWeek(new Date());
   const labels = counts.map((_, index) => {
     const date = new Date(weekStart);
@@ -35,6 +73,46 @@ export function Progress({ workouts, weeklyGoal, busy, error, online, onUpdateGo
         <article className="surface stat-panel"><span className="stat-icon"><TrendingUp size={18} aria-hidden="true" /></span><p>Einheiten insgesamt</p><strong>{workouts.length}</strong><span className="stat-caption">in deinem Trainingsprotokoll</span></article>
       </section>
 
+      <section className="surface chart-panel">
+        <SectionTitle title="Kraftentwicklung" />
+        <p className="muted-copy section-intro">Vergleich des höchsten gespeicherten Gewichts je Übung zwischen deinen letzten Trainingseinheiten.</p>
+        {exerciseProgress.length === 0 ? (
+          <p className="muted-copy">Sobald du Übungen mit Gewichten protokollierst, erscheint deine Entwicklung hier.</p>
+        ) : (
+          <div className="exercise-progress-list">
+            {exerciseProgress.map((exercise) => {
+              const difference = exercise.previous
+                ? exercise.latest.weight - exercise.previous.weight
+                : null;
+              const percent = exercise.previous && exercise.previous.weight > 0
+                ? difference! / exercise.previous.weight * 100
+                : null;
+
+              return (
+                <article className="exercise-progress-item" key={exercise.key}>
+                  <div>
+                    <strong>{exercise.name}</strong>
+                    <p className="muted-copy">
+                      {exercise.previous
+                        ? `Vorher: ${exercise.previous.weight.toLocaleString('de-DE')} kg`
+                        : 'Noch kein Vergleich möglich'}
+                    </p>
+                  </div>
+                  <div className="exercise-progress-value">
+                    <strong>{exercise.latest.weight.toLocaleString('de-DE')} kg</strong>
+                    {difference !== null && (
+                      <span className={difference > 0 ? 'progress-positive' : difference < 0 ? 'progress-negative' : 'muted-copy'}>
+                        {difference > 0 ? '+' : ''}{difference.toLocaleString('de-DE')} kg
+                        {percent !== null ? ` (${percent > 0 ? '+' : ''}${percent.toLocaleString('de-DE', { maximumFractionDigits: 1 })} %)` : ''}
+                      </span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
       <section className="surface chart-panel">
         <SectionTitle title="Training pro Woche" />
         <p className="muted-copy section-intro">Deine letzten sieben Kalenderwochen</p>
