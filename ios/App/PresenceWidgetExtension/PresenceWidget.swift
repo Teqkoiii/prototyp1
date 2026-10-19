@@ -95,7 +95,7 @@ struct PresenceWidgetEntryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Campus Gym")
+            Text("DHBW Gym Hub")
                 .font(.headline)
                 .foregroundStyle(.white)
 
@@ -103,7 +103,7 @@ struct PresenceWidgetEntryView: View {
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.9))
 
-            Text("Demo · nur dieses Gerät")
+            Text("Widget-Status wird nicht geteilt")
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.65))
 
@@ -136,8 +136,8 @@ struct CampusGymPresenceWidget: Widget {
         StaticConfiguration(kind: kind, provider: PresenceTimelineProvider()) { entry in
             PresenceWidgetEntryView(entry: entry)
         }
-        .configurationDisplayName("Campus Gym Check-in")
-        .description("Check-in oder Check-out mit einer Berührung.")
+        .configurationDisplayName("Gym Hub Check-in")
+        .description("Lokaler Widget-Status, nicht mit der gemeinsamen Belegung verbunden.")
         .supportedFamilies([.systemMedium, .systemLarge])
     }
 }

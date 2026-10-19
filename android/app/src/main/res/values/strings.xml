@@ -1,12 +1,13 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Campus Gym</string>
-    <string name="title_activity_main">Campus Gym</string>
+    <string name="app_name">DHBW Gym Hub</string>
+    <string name="title_activity_main">DHBW Gym Hub</string>
     <string name="package_name">de.teqkoiii.campusgym</string>
     <string name="custom_url_scheme">de.teqkoiii.campusgym</string>
-    <string name="presence_widget_name">Campus Gym Check-in</string>
+    <string name="presence_widget_name">Gym Hub Check-in</string>
     <string name="presence_widget_checked_in">Als anwesend markiert · Demo auf diesem Gerät</string>
     <string name="presence_widget_checked_out">Nicht eingecheckt · Demo auf diesem Gerät</string>
+    <string name="presence_widget_local_note">Widget-Status wird nicht mit der gemeinsamen Belegung geteilt</string>
     <string name="presence_widget_check_in">Ich bin drin</string>
     <string name="presence_widget_check_out">Ich gehe</string>
 </resources>
