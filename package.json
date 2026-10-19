@@ -4,13 +4,14 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "node scripts/dev.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "tsx --test src/services/*.test.ts server/*.test.ts",
     "api": "tsx server/index.ts",
+    "gym-api": "tsx server/gym-app.ts",
     "mobile:sync": "bun run build && cap sync",
     "mobile:android": "cap open android",
     "mobile:ios": "cap open ios"

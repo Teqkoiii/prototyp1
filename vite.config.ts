@@ -1,14 +1,17 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 import {defineConfig} from 'vite';
+
+const projectDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(projectDirectory, '.'),
       },
     },
     server: {
@@ -19,6 +22,7 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       // Keep browser API requests same-origin and avoid CORS in local development.
       proxy: {
+        '/api/gym': 'http://127.0.0.1:4001',
         '/api': 'http://127.0.0.1:4000',
       },
     },
