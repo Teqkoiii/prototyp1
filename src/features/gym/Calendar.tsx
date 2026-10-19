@@ -83,7 +83,7 @@ export function Calendar({
 
         <section className="surface calendar-list-panel">
           <SectionTitle title="Deine nächsten Termine" />
-          {upcoming.length ? <ul className="event-list">{upcoming.map((booking) => <li key={booking.id} className="event-row"><span className="event-date-icon"><CalendarClock size={17} aria-hidden="true" /></span><div className="event-content"><strong>{booking.title || 'Training im Gym'}</strong><span>{formatDateTime(booking.startsAt)} · {formatTime(booking.endsAt)}</span></div><button type="button" className="icon-button danger-hover" aria-label={`Reservierung ${booking.title || 'Training'} stornieren`} disabled={busy} onClick={() => onDeleteBooking(booking.id)}><Trash2 size={17} aria-hidden="true" /></button></li>)}</ul> : <EmptyState title="Noch keine Termine" description="Deine Reservierungen erscheinen hier." />}
+          {upcoming.length ? <ul className="event-list">{upcoming.map((booking) => <li key={booking.id} className="event-row"><span className="event-date-icon"><CalendarClock size={17} aria-hidden="true" /></span><div className="event-content"><strong>{booking.title || 'Training im Gym'}</strong><span>{formatDateTime(booking.startsAt)} · {formatTime(booking.endsAt)}</span></div><button type="button" className="icon-button danger-hover" aria-label={`Reservierung ${booking.title || 'Training'} stornieren`} disabled={busy} onClick={() => { if (window.confirm('Diese Reservierung wirklich stornieren?')) onDeleteBooking(booking.id); }}><Trash2 size={17} aria-hidden="true" /></button></li>)}</ul> : <EmptyState title="Noch keine Termine" description="Deine Reservierungen erscheinen hier." />}
         </section>
       </div>
 
