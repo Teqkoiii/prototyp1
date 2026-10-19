@@ -158,6 +158,7 @@ test('linking a profile to a verified account preserves server-owned data and re
     id: 'kept-workout',
     title: 'Training',
     occurredAt: now,
+    notes: '',
     exercises: [{ name: 'Bankdrücken', sets: [{ reps: 8, weightKg: 50 }] }],
   }, now);
 

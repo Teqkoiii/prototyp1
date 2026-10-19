@@ -27,8 +27,8 @@ try {
     startsAt: input.startsAt,
     endsAt: input.endsAt,
     title: '',
-  }, input.now, 1);
-  parentPort.postMessage({ type: 'result', created: result !== null });
+  }, input.now);
+  parentPort.postMessage({ type: 'result', created: !('duplicate' in result) });
 } catch (error) {
   parentPort.postMessage({ type: 'error', message: error instanceof Error ? error.message : 'unknown error' });
 } finally {

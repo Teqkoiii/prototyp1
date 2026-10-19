@@ -9,7 +9,6 @@ interface GymApiOptions {
   secureCookies?: boolean;
   allowedOrigins?: string[];
   maxCheckInHours?: number;
-  reservationCapacity?: number | null;
   now?: () => number;
   makeToken?: () => string;
 }
@@ -35,6 +34,17 @@ function setSessionCookie(response: Response, token: string, maxAgeSeconds: numb
   response.setHeader('Set-Cookie', `${COOKIE_NAME}=${token}; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=${maxAgeSeconds}${secure ? '; Secure' : ''}`);
 }
 
+function clearSessionCookie(response: Response, secure: boolean, crossOriginCookies: boolean): void {
+  const sameSite = crossOriginCookies ? 'None' : 'Strict';
+  response.setHeader('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=${sameSite}; Path=/; Max-Age=0${secure ? '; Secure' : ''}`);
+}
+
+function asyncRoute(handler: (request: GymSessionRequest, response: Response) => Promise<void>) {
+  return (request: GymSessionRequest, response: Response, next: NextFunction) => {
+    handler(request, response).catch(next);
+  };
+}
+
 export function createGymAppApi(database: DatabaseSync, options: GymApiOptions = {}) {
   const secureCookies = options.secureCookies ?? false;
   const allowedOrigins = new Set(options.allowedOrigins ?? []);
@@ -42,7 +52,6 @@ export function createGymAppApi(database: DatabaseSync, options: GymApiOptions =
   if (crossOriginCookies && !secureCookies) throw new Error('Cross-origin app cookies require secureCookies');
   const service = new GymAppService(new GymAppRepository(database), {
     maxCheckInHours: options.maxCheckInHours ?? 8,
-    reservationCapacity: options.reservationCapacity ?? null,
     now: options.now,
     makeToken: options.makeToken,
   });
@@ -89,7 +98,7 @@ export function createGymAppApi(database: DatabaseSync, options: GymApiOptions =
   const requireSession = (request: GymSessionRequest, response: Response, next: NextFunction) => {
     const principalId = service.resolvePrincipal(getCookie(request, COOKIE_NAME));
     if (!principalId) {
-      response.status(401).json({ error: 'anonymous app session required' });
+      response.status(401).json({ error: 'app session required' });
       return;
     }
     request.principalId = principalId;
@@ -102,7 +111,25 @@ export function createGymAppApi(database: DatabaseSync, options: GymApiOptions =
     response.json(service.getSession(opened.principalId));
   });
 
-  app.get('/api/gym/occupancy', (_request, response) => response.json(service.getOccupancy()));
+  app.post('/api/gym/register', asyncRoute(async (request, response) => {
+    const opened = await service.register(getCookie(request, COOKIE_NAME), request.body);
+    setSessionCookie(response, opened.token, opened.maxAgeSeconds, secureCookies, crossOriginCookies);
+    response.status(201).json(service.getSession(opened.principalId));
+  }));
+
+  app.post('/api/gym/login', asyncRoute(async (request, response) => {
+    const opened = await service.login(request.body, request.ip || 'unknown');
+    setSessionCookie(response, opened.token, opened.maxAgeSeconds, secureCookies, crossOriginCookies);
+    response.json(service.getSession(opened.principalId));
+  }));
+
+  app.post('/api/gym/logout', (request, response) => {
+    service.logout(getCookie(request, COOKIE_NAME));
+    clearSessionCookie(response, secureCookies, crossOriginCookies);
+    response.status(204).end();
+  });
+
+  app.get('/api/gym/occupancy', (request, response) => response.json(service.getOccupancy(request.query.range)));
 
   app.post('/api/gym/check-in', requireSession, (request: GymSessionRequest, response) => {
     response.json(service.checkIn(request.principalId!));
@@ -129,8 +156,12 @@ export function createGymAppApi(database: DatabaseSync, options: GymApiOptions =
     response.status(201).json({ booking: result.booking, ...result.availability });
   });
 
+  app.put('/api/gym/my/bookings/:id', requireSession, (request: GymSessionRequest, response) => {
+    response.json({ booking: service.updateBooking(request.principalId!, request.params.id ?? '', request.body) });
+  });
+
   app.delete('/api/gym/my/bookings/:id', requireSession, (request: GymSessionRequest, response) => {
-    service.deleteBooking(request.principalId!, request.params.id ?? '');
+    service.cancelBooking(request.principalId!, request.params.id ?? '');
     response.status(204).end();
   });
 
@@ -151,6 +182,24 @@ export function createGymAppApi(database: DatabaseSync, options: GymApiOptions =
     response.status(204).end();
   });
 
+  app.get('/api/gym/plans', requireSession, (request: GymSessionRequest, response) => {
+    response.json(service.listTrainingPlans(request.principalId!));
+  });
+
+  app.post('/api/gym/plans', requireSession, (request: GymSessionRequest, response) => {
+    response.status(201).json(service.createTrainingPlan(request.principalId!, request.body));
+  });
+
+  app.put('/api/gym/plans/:id', requireSession, (request: GymSessionRequest, response) => {
+    service.updateTrainingPlan(request.principalId!, request.params.id ?? '', request.body);
+    response.status(204).end();
+  });
+
+  app.delete('/api/gym/plans/:id', requireSession, (request: GymSessionRequest, response) => {
+    service.deleteTrainingPlan(request.principalId!, request.params.id ?? '');
+    response.status(204).end();
+  });
+
   app.get('/api/gym/goals', requireSession, (request: GymSessionRequest, response) => {
     response.json(service.getWeeklyGoal(request.principalId!));
   });
@@ -166,7 +215,7 @@ export function createGymAppApi(database: DatabaseSync, options: GymApiOptions =
   app.post('/api/gym/profile/recover', (request, response) => {
     const recovered = service.recoverProfile(request.body, request.ip || 'unknown');
     setSessionCookie(response, recovered.token, recovered.maxAgeSeconds, secureCookies, crossOriginCookies);
-    response.json({ recovered: true, identity: 'anonymous-app-profile' });
+    response.json({ recovered: true, identity: service.getSession(recovered.principalId).identity });
   });
 
   app.delete('/api/gym/my/data', requireSession, (request: GymSessionRequest, response) => {

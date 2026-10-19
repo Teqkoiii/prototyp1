@@ -6,20 +6,31 @@ export interface BookingRecord {
   startsAt: string;
   endsAt: string;
   title: string;
+  status: 'planned' | 'cancelled';
 }
 
 export interface WorkoutRecord {
   id: string;
   title: string;
   occurredAt: string;
+  notes: string;
   exercises: Array<{ name: string; sets: Array<{ reps: number; weightKg: number }> }>;
+}
+
+export interface TrainingPlanRecord {
+  id: string;
+  name: string;
+  notes: string;
+  exercises: Array<{ name: string; targetSets?: number; targetReps?: number; targetWeightKg?: number }>;
 }
 
 export interface BookingAvailability {
   reserved: number;
-  capacity: number | null;
-  availablePlaces: number | null;
+  capacity: null;
+  availablePlaces: null;
 }
+
+export const UNLIMITED_BOOKING_AVAILABILITY = { capacity: null, availablePlaces: null } as const;
 
 export class GymAppRepository {
   constructor(private readonly database: DatabaseSync) {
@@ -100,6 +111,59 @@ export class GymAppRepository {
         updated_at TEXT NOT NULL
       );
     `);
+    this.migrate();
+  }
+
+  private tableColumns(table: 'gym_reservations' | 'workouts'): Set<string> {
+    const rows = this.database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    return new Set(rows.map((row) => row.name));
+  }
+
+  private migrate(): void {
+    const reservationColumns = this.tableColumns('gym_reservations');
+    if (!reservationColumns.has('status')) {
+      this.database.exec("ALTER TABLE gym_reservations ADD COLUMN status TEXT NOT NULL DEFAULT 'planned'");
+    }
+    if (!reservationColumns.has('cancelled_at')) {
+      this.database.exec('ALTER TABLE gym_reservations ADD COLUMN cancelled_at TEXT');
+    }
+    const workoutColumns = this.tableColumns('workouts');
+    if (!workoutColumns.has('notes')) {
+      this.database.exec("ALTER TABLE workouts ADD COLUMN notes TEXT NOT NULL DEFAULT ''");
+    }
+    this.database.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_gym_reservations_owner_slot_planned
+        ON gym_reservations(principal_id, starts_at, ends_at) WHERE status = 'planned';
+      CREATE TABLE IF NOT EXISTS gym_local_credentials (
+        principal_id TEXT PRIMARY KEY REFERENCES gym_principals(id) ON DELETE CASCADE,
+        email_normalized TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS occupancy_samples (
+        sampled_at TEXT PRIMARY KEY,
+        reported_count INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_occupancy_samples_time ON occupancy_samples(sampled_at);
+      CREATE TABLE IF NOT EXISTS training_plans (
+        id TEXT PRIMARY KEY,
+        principal_id TEXT NOT NULL REFERENCES gym_principals(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_training_plans_owner ON training_plans(principal_id, updated_at);
+      CREATE TABLE IF NOT EXISTS training_plan_exercises (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL REFERENCES training_plans(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        target_sets INTEGER,
+        target_reps INTEGER,
+        target_weight_kg REAL
+      );
+    `);
   }
 
   cleanupExpiredData(nowIso: string, visitCutoffIso: string, reservationCutoffIso: string): void {
@@ -115,6 +179,7 @@ export class GymAppRepository {
     this.database.prepare('DELETE FROM app_sessions WHERE expires_at <= ?').run(nowIso);
     this.database.prepare('DELETE FROM gym_visits WHERE checked_in_at <= ?').run(visitCutoffIso);
     this.database.prepare('DELETE FROM gym_reservations WHERE ends_at < ?').run(reservationCutoffIso);
+    this.database.prepare('DELETE FROM occupancy_samples WHERE sampled_at < ?').run(new Date(Date.parse(nowIso) - 8 * 86400_000).toISOString());
   }
 
   findSession(sessionHash: string, nowIso: string): { principalId: string } | undefined {
@@ -126,11 +191,41 @@ export class GymAppRepository {
     this.database.prepare('UPDATE app_sessions SET expires_at = ? WHERE session_hash = ?').run(expiresAt, sessionHash);
   }
 
+  deleteSession(sessionHash: string): void {
+    this.database.prepare('DELETE FROM app_sessions WHERE session_hash = ?').run(sessionHash);
+  }
+
   createAnonymousPrincipal(sessionHash: string, nowIso: string, expiresAt: string): string {
     const principalId = randomUUID();
     this.database.prepare('INSERT INTO gym_principals(id, created_at) VALUES (?, ?)').run(principalId, nowIso);
     this.createSession(sessionHash, principalId, nowIso, expiresAt);
     return principalId;
+  }
+
+  hasLocalCredentials(principalId: string): boolean {
+    return Boolean(this.database.prepare('SELECT 1 FROM gym_local_credentials WHERE principal_id = ?').get(principalId));
+  }
+
+  getLocalAccount(principalId: string): { email: string } | undefined {
+    const row = this.database.prepare('SELECT email_normalized AS email FROM gym_local_credentials WHERE principal_id = ?')
+      .get(principalId) as { email: string } | undefined;
+    return row;
+  }
+
+  findLocalCredentialsByEmail(emailNormalized: string): { principalId: string; passwordHash: string } | undefined {
+    return this.database.prepare(`
+      SELECT principal_id AS principalId, password_hash AS passwordHash
+      FROM gym_local_credentials WHERE email_normalized = ?
+    `).get(emailNormalized) as { principalId: string; passwordHash: string } | undefined;
+  }
+
+  createLocalCredentials(principalId: string, emailNormalized: string, passwordHash: string, nowIso: string): void {
+    this.database.prepare('INSERT INTO gym_local_credentials(principal_id, email_normalized, password_hash, created_at) VALUES (?, ?, ?, ?)')
+      .run(principalId, emailNormalized, passwordHash, nowIso);
+  }
+
+  emailTaken(emailNormalized: string): boolean {
+    return Boolean(this.database.prepare('SELECT 1 FROM gym_local_credentials WHERE email_normalized = ?').get(emailNormalized));
   }
 
   linkAnonymousProfileToVerifiedAccount(principalId: string, provider: string, verifiedSubject: string, nowIso: string): string {
@@ -211,6 +306,28 @@ export class GymAppRepository {
     return (this.database.prepare('SELECT COUNT(*) AS count FROM manual_check_ins WHERE expires_at > ?').get(nowIso) as { count: number }).count;
   }
 
+  plannedOverlapping(nowIso: string): number {
+    return (this.database.prepare(`
+      SELECT COUNT(*) AS count FROM gym_reservations
+      WHERE status = 'planned' AND starts_at <= ? AND ends_at > ?
+    `).get(nowIso, nowIso) as { count: number }).count;
+  }
+
+  recordOccupancySample(nowIso: string, count: number): void {
+    const last = this.database.prepare('SELECT sampled_at AS sampledAt, reported_count AS reportedCount FROM occupancy_samples ORDER BY sampled_at DESC LIMIT 1')
+      .get() as { sampledAt: string; reportedCount: number } | undefined;
+    if (last && last.reportedCount === count && Date.parse(nowIso) - Date.parse(last.sampledAt) < 60_000) return;
+    this.database.prepare('INSERT OR REPLACE INTO occupancy_samples(sampled_at, reported_count) VALUES (?, ?)').run(nowIso, count);
+  }
+
+  listOccupancyHistory(fromIso: string, toIso: string): Array<{ at: string; count: number }> {
+    return this.database.prepare(`
+      SELECT sampled_at AS at, reported_count AS count
+      FROM occupancy_samples WHERE sampled_at >= ? AND sampled_at <= ?
+      ORDER BY sampled_at ASC
+    `).all(fromIso, toIso) as Array<{ at: string; count: number }>;
+  }
+
   checkIn(principalId: string, checkedInAt: string, expiresAt: string): { checkedInAt: string; expiresAt: string } {
     this.database.exec('BEGIN IMMEDIATE');
     try {
@@ -245,49 +362,75 @@ export class GymAppRepository {
     }
   }
 
-  availability(startAt: string, endAt: string, capacity: number | null): BookingAvailability {
-    const reserved = (this.database.prepare('SELECT COUNT(*) AS count FROM gym_reservations WHERE starts_at < ? AND ends_at > ?')
-      .get(endAt, startAt) as { count: number }).count;
-    return { reserved, capacity, availablePlaces: capacity === null ? null : Math.max(0, capacity - reserved) };
+  availability(startAt: string, endAt: string): BookingAvailability {
+    const reserved = (this.database.prepare(`
+      SELECT COUNT(*) AS count FROM gym_reservations
+      WHERE status = 'planned' AND starts_at < ? AND ends_at > ?
+    `).get(endAt, startAt) as { count: number }).count;
+    return { reserved, ...UNLIMITED_BOOKING_AVAILABILITY };
   }
 
-  listBookingSlots(from: string, to: string, capacity: number | null): Array<BookingAvailability & { startsAt: string; endsAt: string }> {
+  listBookingSlots(from: string, to: string): Array<BookingAvailability & { startsAt: string; endsAt: string }> {
     const rows = this.database.prepare(`
       SELECT DISTINCT starts_at AS startsAt, ends_at AS endsAt
-      FROM gym_reservations WHERE starts_at < ? AND ends_at > ?
+      FROM gym_reservations WHERE status = 'planned' AND starts_at < ? AND ends_at > ?
       ORDER BY starts_at ASC
     `).all(to, from) as Array<{ startsAt: string; endsAt: string }>;
-    return rows.map((row) => ({ ...row, ...this.availability(row.startsAt, row.endsAt, capacity) }));
+    return rows.map((row) => ({ ...row, ...this.availability(row.startsAt, row.endsAt) }));
   }
 
-  createBooking(principalId: string, booking: BookingRecord, createdAt: string, capacity: number | null): BookingAvailability | null {
+  createBooking(principalId: string, booking: Omit<BookingRecord, 'status'>, createdAt: string): { availability: BookingAvailability } | { duplicate: true } {
     this.database.exec('BEGIN IMMEDIATE');
     try {
-      const current = this.availability(booking.startsAt, booking.endsAt, capacity);
-      if (current.availablePlaces !== null && current.availablePlaces <= 0) {
-        this.database.exec('ROLLBACK');
-        return null;
-      }
-      this.database.prepare('INSERT INTO gym_reservations(id, principal_id, starts_at, ends_at, title, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(booking.id, principalId, booking.startsAt, booking.endsAt, booking.title, createdAt);
-      const updated = this.availability(booking.startsAt, booking.endsAt, capacity);
+      this.database.prepare(`
+        INSERT INTO gym_reservations(id, principal_id, starts_at, ends_at, title, created_at, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'planned')
+      `).run(booking.id, principalId, booking.startsAt, booking.endsAt, booking.title, createdAt);
+      const availability = this.availability(booking.startsAt, booking.endsAt);
       this.database.exec('COMMIT');
-      return updated;
+      return { availability };
     } catch (error) {
       this.database.exec('ROLLBACK');
+      if (isUniqueConstraint(error)) return { duplicate: true };
+      throw error;
+    }
+  }
+
+  updateBooking(principalId: string, id: string, booking: Omit<BookingRecord, 'id' | 'status'>, updatedAt: string): BookingRecord | 'missing' | 'duplicate' {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      const existing = this.database.prepare(`
+        SELECT id FROM gym_reservations WHERE id = ? AND principal_id = ? AND status = 'planned'
+      `).get(id, principalId);
+      if (!existing) {
+        this.database.exec('ROLLBACK');
+        return 'missing';
+      }
+      this.database.prepare(`
+        UPDATE gym_reservations SET starts_at = ?, ends_at = ?, title = ?, created_at = ?
+        WHERE id = ? AND principal_id = ? AND status = 'planned'
+      `).run(booking.startsAt, booking.endsAt, booking.title, updatedAt, id, principalId);
+      this.database.exec('COMMIT');
+      return { id, ...booking, status: 'planned' };
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      if (isUniqueConstraint(error)) return 'duplicate';
       throw error;
     }
   }
 
   listMyBookings(principalId: string): BookingRecord[] {
     return this.database.prepare(`
-      SELECT id, starts_at AS startsAt, ends_at AS endsAt, title
+      SELECT id, starts_at AS startsAt, ends_at AS endsAt, title, status
       FROM gym_reservations WHERE principal_id = ? ORDER BY starts_at ASC
     `).all(principalId) as unknown as BookingRecord[];
   }
 
-  deleteBooking(principalId: string, id: string): boolean {
-    return this.database.prepare('DELETE FROM gym_reservations WHERE id = ? AND principal_id = ?').run(id, principalId).changes > 0;
+  cancelBooking(principalId: string, id: string, cancelledAt: string): boolean {
+    return this.database.prepare(`
+      UPDATE gym_reservations SET status = 'cancelled', cancelled_at = ?
+      WHERE id = ? AND principal_id = ? AND status = 'planned'
+    `).run(cancelledAt, id, principalId).changes > 0;
   }
 
   listVisits(principalId: string, from: string, to: string): Array<{ id: string; checkedInAt: string; checkedOutAt: string | null }> {
@@ -300,7 +443,7 @@ export class GymAppRepository {
 
   listWorkouts(principalId: string): WorkoutRecord[] {
     const rows = this.database.prepare(`
-      SELECT id, title, occurred_at AS occurredAt FROM workouts
+      SELECT id, title, occurred_at AS occurredAt, notes FROM workouts
       WHERE principal_id = ? ORDER BY occurred_at DESC LIMIT 100
     `).all(principalId) as Array<Omit<WorkoutRecord, 'exercises'>>;
     return rows.map((workout) => {
@@ -320,8 +463,8 @@ export class GymAppRepository {
   createWorkout(principalId: string, workout: WorkoutRecord, createdAt: string): void {
     this.database.exec('BEGIN IMMEDIATE');
     try {
-      this.database.prepare('INSERT INTO workouts(id, principal_id, title, occurred_at, created_at) VALUES (?, ?, ?, ?, ?)')
-        .run(workout.id, principalId, workout.title, workout.occurredAt, createdAt);
+      this.database.prepare('INSERT INTO workouts(id, principal_id, title, occurred_at, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(workout.id, principalId, workout.title, workout.occurredAt, workout.notes, createdAt);
       workout.exercises.forEach((exercise, index) => {
         const exerciseId = randomUUID();
         this.database.prepare('INSERT INTO workout_exercises(id, workout_id, position, name) VALUES (?, ?, ?, ?)')
@@ -340,6 +483,64 @@ export class GymAppRepository {
 
   deleteWorkout(principalId: string, id: string): boolean {
     return this.database.prepare('DELETE FROM workouts WHERE id = ? AND principal_id = ?').run(id, principalId).changes > 0;
+  }
+
+  listTrainingPlans(principalId: string): TrainingPlanRecord[] {
+    const rows = this.database.prepare(`
+      SELECT id, name, notes FROM training_plans WHERE principal_id = ? ORDER BY updated_at DESC
+    `).all(principalId) as Array<{ id: string; name: string; notes: string }>;
+    return rows.map((plan) => ({
+      ...plan,
+      exercises: this.database.prepare(`
+        SELECT name, target_sets AS targetSets, target_reps AS targetReps, target_weight_kg AS targetWeightKg
+        FROM training_plan_exercises WHERE plan_id = ? ORDER BY position ASC
+      `).all(plan.id) as TrainingPlanRecord['exercises'],
+    }));
+  }
+
+  createTrainingPlan(principalId: string, plan: TrainingPlanRecord, nowIso: string): void {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database.prepare('INSERT INTO training_plans(id, principal_id, name, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(plan.id, principalId, plan.name, plan.notes, nowIso, nowIso);
+      this.insertPlanExercises(plan);
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  updateTrainingPlan(principalId: string, plan: TrainingPlanRecord, nowIso: string): boolean {
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      const updated = this.database.prepare('UPDATE training_plans SET name = ?, notes = ?, updated_at = ? WHERE id = ? AND principal_id = ?')
+        .run(plan.name, plan.notes, nowIso, plan.id, principalId).changes;
+      if (updated === 0) {
+        this.database.exec('ROLLBACK');
+        return false;
+      }
+      this.database.prepare('DELETE FROM training_plan_exercises WHERE plan_id = ?').run(plan.id);
+      this.insertPlanExercises(plan);
+      this.database.exec('COMMIT');
+      return true;
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  deleteTrainingPlan(principalId: string, id: string): boolean {
+    return this.database.prepare('DELETE FROM training_plans WHERE id = ? AND principal_id = ?').run(id, principalId).changes > 0;
+  }
+
+  private insertPlanExercises(plan: TrainingPlanRecord): void {
+    plan.exercises.forEach((exercise, index) => {
+      this.database.prepare(`
+        INSERT INTO training_plan_exercises(id, plan_id, position, name, target_sets, target_reps, target_weight_kg)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(randomUUID(), plan.id, index, exercise.name, exercise.targetSets ?? null, exercise.targetReps ?? null, exercise.targetWeightKg ?? null);
+    });
   }
 
   getWeeklyGoal(principalId: string): number {
@@ -362,6 +563,7 @@ export class GymAppRepository {
       this.database.prepare('DELETE FROM gym_visits WHERE principal_id = ?').run(principalId);
       this.database.prepare('DELETE FROM gym_reservations WHERE principal_id = ?').run(principalId);
       this.database.prepare('DELETE FROM workouts WHERE principal_id = ?').run(principalId);
+      this.database.prepare('DELETE FROM training_plans WHERE principal_id = ?').run(principalId);
       this.database.prepare('DELETE FROM training_goals WHERE principal_id = ?').run(principalId);
       this.database.prepare('DELETE FROM profile_recovery_tokens WHERE principal_id = ?').run(principalId);
       this.database.exec('COMMIT');
@@ -370,4 +572,8 @@ export class GymAppRepository {
       throw error;
     }
   }
+}
+
+function isUniqueConstraint(error: unknown): boolean {
+  return error instanceof Error && /UNIQUE constraint failed/i.test(error.message);
 }
