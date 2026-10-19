@@ -23,7 +23,7 @@ jobs:
         with:
           bun-version: latest
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
       - name: Type-check
         run: bun run lint
       - name: Automated tests (unit, database and API integration)
@@ -47,7 +47,7 @@ jobs:
           java-version: '21'
           cache: gradle
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
       - name: Build web app and sync Android project
         run: bun run build && bun x cap sync android
       - name: Build Android app
@@ -64,7 +64,7 @@ jobs:
         with:
           bun-version: latest
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
       - name: Build web app and sync iOS project
         run: bun run build && bun x cap sync ios
       - name: Build iOS app and widget for Simulator
