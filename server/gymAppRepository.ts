@@ -422,7 +422,9 @@ export class GymAppRepository {
   listMyBookings(principalId: string): BookingRecord[] {
     return this.database.prepare(`
       SELECT id, starts_at AS startsAt, ends_at AS endsAt, title, status
-      FROM gym_reservations WHERE principal_id = ? ORDER BY starts_at ASC
+      FROM gym_reservations
+      WHERE principal_id = ? AND status = 'planned'
+      ORDER BY starts_at ASC
     `).all(principalId) as unknown as BookingRecord[];
   }
 

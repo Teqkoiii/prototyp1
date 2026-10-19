@@ -1,0 +1,336 @@
+From 2e0143a76a0dd18546657405007ed41da9b3bb45 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 19 Oct 2026 13:11:29 +0000
+Subject: [PATCH] fix: repair type-check and align tests with unlimited
+ bookings
+
+- password: type the scrypt wrapper explicitly (util.promisify dropped the options overload)
+- tests: drop the obsolete reservationCapacity option and capacity assertions; bookings
+  are never rejected for overlap, only an identical planned slot of the same profile is a duplicate
+- booking worker: register tsx inside the worker thread so the concurrency test can load TS sources
+- ui: remove capacity-based disabling of the reservation button and the misleading
+  'no places left' message for HTTP 409
+---
+ server/gym-app-api.test.ts      | 27 ++++++++++++++--------
+ server/gymAppBookingWorker.ts   |  6 ++++-
+ server/gymAppRepository.test.ts | 41 ++++++++++++++++++---------------
+ server/password.ts              | 17 ++++++++++----
+ src/features/gym/Calendar.tsx   |  9 +++-----
+ src/features/gym/GymApp.tsx     |  7 ++----
+ 6 files changed, 63 insertions(+), 44 deletions(-)
+
+diff --git a/server/gym-app-api.test.ts b/server/gym-app-api.test.ts
+index a9820cb..cb86dc9 100644
+--- a/server/gym-app-api.test.ts
++++ b/server/gym-app-api.test.ts
+@@ -4,9 +4,9 @@ import test, { type TestContext } from 'node:test';
+ import { DatabaseSync } from 'node:sqlite';
+ import { createGymAppApi } from './gym-app-api';
+ 
+-async function startApi(t: TestContext, reservationCapacity: number | null = null, options: { secureCookies?: boolean; allowedOrigins?: string[] } = {}) {
++async function startApi(t: TestContext, options: { secureCookies?: boolean; allowedOrigins?: string[] } = {}) {
+   const database = new DatabaseSync(':memory:');
+-  const server = createServer(createGymAppApi(database, { reservationCapacity, secureCookies: options.secureCookies ?? false, allowedOrigins: options.allowedOrigins }));
++  const server = createServer(createGymAppApi(database, { secureCookies: options.secureCookies ?? false, allowedOrigins: options.allowedOrigins }));
+   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+   const address = server.address();
+   assert.ok(address && typeof address !== 'string');
+@@ -59,8 +59,8 @@ test('manual check-in is shared, idempotent, and scoped to the server session',
+   assert.ok(visits[0]?.checkedOutAt);
+ });
+ 
+-test('reservations are shared as aggregate slots and private records cannot be accessed across profiles', async (t) => {
+-  const { baseUrl } = await startApi(t, 1);
++test('reservations are shared as aggregate slots, never limited by capacity, and private records cannot be accessed across profiles', async (t) => {
++  const { baseUrl } = await startApi(t);
+   const owner = await createAnonymousClient(baseUrl);
+   const other = await createAnonymousClient(baseUrl);
+   const startsAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+@@ -75,13 +75,22 @@ test('reservations are shared as aggregate slots and private records cannot be a
+     slots: Array<{ reserved: number; availablePlaces: number | null }>;
+   };
+   assert.equal(shared.slots[0]?.reserved, 1);
+-  assert.equal(shared.slots[0]?.availablePlaces, 0);
++  assert.equal(shared.slots[0]?.availablePlaces, null);
+   assert.equal((await other.request('/api/gym/my/bookings').then((response) => response.json()) as { bookings: unknown[] }).bookings.length, 0);
+   assert.equal((await other.request(`/api/gym/my/bookings/${booking.id}`, { method: 'DELETE' })).status, 404);
+-  assert.equal((await other.request('/api/gym/bookings', {
++  const otherBooking = await other.request('/api/gym/bookings', {
++    method: 'POST',
++    body: JSON.stringify({ startsAt, durationMinutes: 60 }),
++  });
++  assert.equal(otherBooking.status, 201, 'a second profile must be able to book the same time');
++  const afterOther = await otherBooking.json() as { reserved: number; capacity: number | null; availablePlaces: number | null };
++  assert.equal(afterOther.reserved, 2);
++  assert.equal(afterOther.capacity, null);
++  assert.equal(afterOther.availablePlaces, null);
++  assert.equal((await owner.request('/api/gym/bookings', {
+     method: 'POST',
+     body: JSON.stringify({ startsAt, durationMinutes: 60 }),
+-  })).status, 409);
++  })).status, 409, 'only the same profile booking the identical slot twice is a duplicate');
+ });
+ 
+ test('workouts and goals persist per anonymous profile and can be deleted by their owner', async (t) => {
+@@ -152,7 +161,7 @@ test('recovery code restores the same server profile once and rotates the active
+   })).status, 401);
+ });
+ 
+-test('availability stays explicitly unknown when the gym capacity has not been configured', async (t) => {
++test('availability never reports a capacity or place limit', async (t) => {
+   const { baseUrl } = await startApi(t);
+   const client = await createAnonymousClient(baseUrl);
+   const startsAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+@@ -167,7 +176,7 @@ test('availability stays explicitly unknown when the gym capacity has not been c
+ 
+ test('cross-origin mobile API access requires an exact allowlist and secure cookies', async (t) => {
+   const allowedOrigin = 'capacitor://localhost';
+-  const { baseUrl } = await startApi(t, null, { secureCookies: true, allowedOrigins: [allowedOrigin] });
++  const { baseUrl } = await startApi(t, { secureCookies: true, allowedOrigins: [allowedOrigin] });
+   const session = await fetch(`${baseUrl}/api/gym/session`, { headers: { Origin: allowedOrigin } });
+   assert.equal(session.status, 200);
+   assert.equal(session.headers.get('access-control-allow-origin'), allowedOrigin);
+diff --git a/server/gymAppBookingWorker.ts b/server/gymAppBookingWorker.ts
+index 512a0e5..8f5d4b4 100644
+--- a/server/gymAppBookingWorker.ts
++++ b/server/gymAppBookingWorker.ts
+@@ -1,6 +1,10 @@
+ import { parentPort, workerData } from 'node:worker_threads';
+ import { DatabaseSync } from 'node:sqlite';
+-import { GymAppRepository } from './gymAppRepository';
++import { register } from 'tsx/esm/api';
++
++// Worker threads do not reliably inherit the TypeScript loader, so register it here before loading TypeScript sources.
++register();
++const { GymAppRepository } = await import('./gymAppRepository');
+ 
+ interface BookingWorkerData {
+   databasePath: string;
+diff --git a/server/gymAppRepository.test.ts b/server/gymAppRepository.test.ts
+index 5403400..d26696d 100644
+--- a/server/gymAppRepository.test.ts
++++ b/server/gymAppRepository.test.ts
+@@ -48,7 +48,7 @@ test('database check-in expiry closes a visit and removes it from occupancy', ()
+   database.close();
+ });
+ 
+-test('reservation capacity is checked against overlapping intervals in an atomic database transaction', () => {
++test('bookings are never rejected for overlapping intervals; only an identical planned slot of the same profile is a duplicate', () => {
+   const database = new DatabaseSync(':memory:');
+   const repository = new GymAppRepository(database);
+   const now = '2026-10-19T09:00:00.000Z';
+@@ -60,22 +60,28 @@ test('reservation capacity is checked against overlapping intervals in an atomic
+   const overlapping = {
+     id: 'booking-b', startsAt: '2026-10-20T09:30:00.000Z', endsAt: '2026-10-20T10:30:00.000Z', title: '',
+   };
+-  assert.deepEqual(repository.createBooking(firstPrincipal, first, now, 1), {
+-    reserved: 1, capacity: 1, availablePlaces: 0,
+-  });
+-  assert.equal(repository.createBooking(secondPrincipal, overlapping, now, 1), null);
+   const adjacent = {
+     id: 'booking-c', startsAt: '2026-10-20T10:00:00.000Z', endsAt: '2026-10-20T11:00:00.000Z', title: '',
+   };
+-  assert.deepEqual(repository.createBooking(secondPrincipal, adjacent, now, 1), {
+-    reserved: 1, capacity: 1, availablePlaces: 0,
++  assert.deepEqual(repository.createBooking(firstPrincipal, first, now), {
++    availability: { reserved: 1, capacity: null, availablePlaces: null },
++  });
++  assert.deepEqual(repository.createBooking(secondPrincipal, overlapping, now), {
++    availability: { reserved: 2, capacity: null, availablePlaces: null },
++  });
++  assert.deepEqual(repository.createBooking(secondPrincipal, adjacent, now), {
++    availability: { reserved: 2, capacity: null, availablePlaces: null },
+   });
++  assert.deepEqual(repository.createBooking(secondPrincipal, { ...first, id: 'booking-d' }, now), {
++    availability: { reserved: 3, capacity: null, availablePlaces: null },
++  });
++  assert.deepEqual(repository.createBooking(firstPrincipal, { ...first, id: 'booking-e' }, now), { duplicate: true });
+   assert.equal(repository.listMyBookings(firstPrincipal).length, 1);
+-  assert.equal(repository.listMyBookings(secondPrincipal).length, 1);
++  assert.equal(repository.listMyBookings(secondPrincipal).length, 3);
+   database.close();
+ });
+ 
+-test('shared reservation slots count every overlapping reservation when showing remaining places', () => {
++test('shared reservation slots count every overlapping reservation without exposing a place limit', () => {
+   const database = new DatabaseSync(':memory:');
+   const repository = new GymAppRepository(database);
+   const now = '2026-10-19T09:00:00.000Z';
+@@ -83,17 +89,17 @@ test('shared reservation slots count every overlapping reservation when showing
+   const secondPrincipal = createPrincipal(repository, 'overlap-b', now);
+   repository.createBooking(firstPrincipal, {
+     id: 'overlap-one', startsAt: '2026-10-20T09:00:00.000Z', endsAt: '2026-10-20T10:00:00.000Z', title: '',
+-  }, now, 5);
++  }, now);
+   repository.createBooking(secondPrincipal, {
+     id: 'overlap-two', startsAt: '2026-10-20T09:30:00.000Z', endsAt: '2026-10-20T10:00:00.000Z', title: '',
+-  }, now, 5);
+-  const slots = repository.listBookingSlots('2026-10-20T00:00:00.000Z', '2026-10-21T00:00:00.000Z', 5);
++  }, now);
++  const slots = repository.listBookingSlots('2026-10-20T00:00:00.000Z', '2026-10-21T00:00:00.000Z');
+   assert.equal(slots.length, 2);
+-  assert.deepEqual(slots.map((slot) => [slot.reserved, slot.availablePlaces]), [[2, 3], [2, 3]]);
++  assert.deepEqual(slots.map((slot) => [slot.reserved, slot.capacity, slot.availablePlaces]), [[2, null, null], [2, null, null]]);
+   database.close();
+ });
+ 
+-test('simultaneous database workers cannot oversubscribe the same reservation interval', async () => {
++test('simultaneous database workers can both book the same interval because bookings are never capacity-limited', async () => {
+   const directory = mkdtempSync(join(tmpdir(), 'gym-app-db-test-'));
+   const path = join(directory, 'gym.sqlite3');
+   const setupDatabase = new DatabaseSync(path);
+@@ -111,7 +117,6 @@ test('simultaneous database workers cannot oversubscribe the same reservation in
+   ].map((item) => ({ ...item, startsAt, endsAt, now, barrier }));
+   const workers = inputs.map((workerData) => new Worker(new URL('./gymAppBookingWorker.ts', import.meta.url), {
+     workerData,
+-    execArgv: ['--import', 'tsx'],
+   }));
+   const waitForMessage = (worker: Worker, type: string) => new Promise<Record<string, unknown>>((resolve, reject) => {
+     const handleMessage = (message: Record<string, unknown>) => {
+@@ -135,12 +140,12 @@ test('simultaneous database workers cannot oversubscribe the same reservation in
+     Atomics.store(new Int32Array(barrier), 0, 1);
+     Atomics.notify(new Int32Array(barrier), 0, workers.length);
+     const replies = await Promise.all(results);
+-    assert.equal(replies.filter((reply) => reply.created === true).length, 1);
+-    assert.equal(replies.filter((reply) => reply.created === false).length, 1);
++    assert.equal(replies.filter((reply) => reply.created === true).length, 2);
++    assert.equal(replies.filter((reply) => reply.created === false).length, 0);
+ 
+     const verifyDatabase = new DatabaseSync(path);
+     const verifyRepository = new GymAppRepository(verifyDatabase);
+-    assert.equal(verifyRepository.availability(startsAt, endsAt, 1).reserved, 1);
++    assert.equal(verifyRepository.availability(startsAt, endsAt).reserved, 2);
+     verifyDatabase.close();
+   } finally {
+     await Promise.all(workers.map((worker) => worker.terminate()));
+diff --git a/server/password.ts b/server/password.ts
+index a5900b9..d082b09 100644
+--- a/server/password.ts
++++ b/server/password.ts
+@@ -1,7 +1,14 @@
+-import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+-import { promisify } from 'node:util';
++import { randomBytes, scrypt as scryptCallback, timingSafeEqual, type ScryptOptions } from 'node:crypto';
+ 
+-const scrypt = promisify(scryptCallback);
++// util.promisify only sees the last scrypt overload (without options), so the options-aware wrapper is typed explicitly.
++function scrypt(password: string, salt: Buffer, keyLength: number, options: ScryptOptions): Promise<Buffer> {
++  return new Promise((resolve, reject) => {
++    scryptCallback(password, salt, keyLength, options, (error, derivedKey) => {
++      if (error) reject(error);
++      else resolve(derivedKey);
++    });
++  });
++}
+ const KEY_LENGTH = 32;
+ const N = 16384;
+ const R = 8;
+@@ -9,7 +16,7 @@ const P = 1;
+ 
+ export async function hashPassword(password: string): Promise<string> {
+   const salt = randomBytes(16);
+-  const derived = await scrypt(password, salt, KEY_LENGTH, { N, r: R, p: P }) as Buffer;
++  const derived = await scrypt(password, salt, KEY_LENGTH, { N, r: R, p: P });
+   return `scrypt$${N}$${R}$${P}$${salt.toString('base64url')}$${derived.toString('base64url')}`;
+ }
+ 
+@@ -24,7 +31,7 @@ export async function verifyPassword(password: string, encoded: string): Promise
+     const salt = Buffer.from(parts[4], 'base64url');
+     const expected = Buffer.from(parts[5], 'base64url');
+     if (salt.length < 8 || expected.length !== KEY_LENGTH) return false;
+-    const derived = await scrypt(password, salt, expected.length, { N: n, r, p }) as Buffer;
++    const derived = await scrypt(password, salt, expected.length, { N: n, r, p });
+     if (derived.length !== expected.length) return false;
+     return timingSafeEqual(derived, expected);
+   } catch {
+diff --git a/src/features/gym/Calendar.tsx b/src/features/gym/Calendar.tsx
+index 8175ae1..a45c702 100644
+--- a/src/features/gym/Calendar.tsx
++++ b/src/features/gym/Calendar.tsx
+@@ -27,7 +27,6 @@ export function Calendar({
+   sharedSlots,
+   visits,
+   availability,
+-  capacityConfigured,
+   online,
+   busy,
+   error,
+@@ -39,7 +38,6 @@ export function Calendar({
+   sharedSlots: SharedBookingSlot[];
+   visits: GymVisit[];
+   availability: GymAvailability | null;
+-  capacityConfigured: boolean;
+   online: boolean;
+   busy: boolean;
+   error: string | null;
+@@ -76,10 +74,9 @@ export function Calendar({
+             <Field label="Datum und Uhrzeit"><input className="text-input" type="datetime-local" value={startsAt} min={localDateTimeValue(new Date())} onChange={(event) => setStartsAt(event.target.value)} required /></Field>
+             <Field label="Dauer"><select className="text-input" value={duration} onChange={(event) => setDuration(Number(event.target.value))}><option value={30}>30 Minuten</option><option value={60}>1 Stunde</option><option value={90}>1,5 Stunden</option><option value={120}>2 Stunden</option></select></Field>
+             <Field label="Titel (optional)"><input className="text-input" maxLength={80} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="z. B. Oberkörper" /></Field>
+-            {capacityConfigured && availability && <InlineNotice tone={availability.availablePlaces === 0 ? 'warning' : 'success'}>{availability.reserved} von {availability.capacity} Plätzen belegt · {availability.availablePlaces} verfügbar</InlineNotice>}
+-            {!capacityConfigured && <InlineNotice>Reservierungen werden geteilt. Die Raumkapazität ist noch nicht konfiguriert, daher werden freie Plätze nicht ausgewiesen.</InlineNotice>}
++            {availability && <InlineNotice>{availability.reserved === 0 ? 'Für diese Zeit gibt es noch keine geteilten Reservierungen.' : `${availability.reserved} Reservierung${availability.reserved === 1 ? '' : 'en'} in diesem Zeitraum. Reservierungen sind jederzeit möglich, es gibt keine Teilnehmergrenze.`}</InlineNotice>}
+             {error && <InlineNotice tone="error">{error}</InlineNotice>}
+-            <button className="button button-primary full-width" type="submit" disabled={!online || busy || (capacityConfigured && !availability) || (availability?.availablePlaces === 0)}><CalendarClock size={17} aria-hidden="true" />Zeit reservieren</button>
++            <button className="button button-primary full-width" type="submit" disabled={!online || busy}><CalendarClock size={17} aria-hidden="true" />Zeit reservieren</button>
+             <p className="field-hint">App-Reservierung · nicht mit dem DHBW-Türsystem oder einer Zutrittsberechtigung verbunden.</p>
+           </form>
+         </section>
+@@ -94,7 +91,7 @@ export function Calendar({
+         <section className="surface calendar-list-panel">
+           <SectionTitle title="Gemeinsame Reservierungen" />
+           <p className="muted-copy section-intro">Es werden nur Zeitfenster und Anzahl angezeigt, keine Namen.</p>
+-          {sharedSlots.length ? <ul className="event-list">{sharedSlots.slice(0, 10).map((slot) => <li key={`${slot.startsAt}-${slot.endsAt}`} className="event-row"><span className="event-date-icon"><Clock3 size={17} aria-hidden="true" /></span><div className="event-content"><strong>{formatDateTime(slot.startsAt)}</strong><span>{slot.reserved} Reservierung{slot.reserved === 1 ? '' : 'en'}{slot.capacity !== null ? ` · ${slot.availablePlaces} Plätze frei` : ' · Kapazität unbekannt'}</span></div></li>)}</ul> : <p className="muted-copy">Im gewählten Zeitraum gibt es noch keine Reservierungen.</p>}
++          {sharedSlots.length ? <ul className="event-list">{sharedSlots.slice(0, 10).map((slot) => <li key={`${slot.startsAt}-${slot.endsAt}`} className="event-row"><span className="event-date-icon"><Clock3 size={17} aria-hidden="true" /></span><div className="event-content"><strong>{formatDateTime(slot.startsAt)}</strong><span>{slot.reserved} Reservierung{slot.reserved === 1 ? '' : 'en'}</span></div></li>)}</ul> : <p className="muted-copy">Im gewählten Zeitraum gibt es noch keine Reservierungen.</p>}
+         </section>
+         <section className="surface calendar-list-panel">
+           <SectionTitle title="Vergangene Gym-Besuche" />
+diff --git a/src/features/gym/GymApp.tsx b/src/features/gym/GymApp.tsx
+index c10a7d7..c2795ab 100644
+--- a/src/features/gym/GymApp.tsx
++++ b/src/features/gym/GymApp.tsx
+@@ -19,7 +19,6 @@ export function GymApp() {
+   const [occupancy, setOccupancy] = useState<OccupancySnapshot | null>(null);
+   const [bookings, setBookings] = useState<GymBooking[]>([]);
+   const [sharedSlots, setSharedSlots] = useState<SharedBookingSlot[]>([]);
+-  const [capacityConfigured, setCapacityConfigured] = useState(false);
+   const [visits, setVisits] = useState<GymVisit[]>([]);
+   const [workouts, setWorkouts] = useState<WorkoutLog[]>([]);
+   const [weeklyGoal, setWeeklyGoal] = useState(3);
+@@ -39,7 +38,6 @@ export function GymApp() {
+       setSession(currentSession);
+       setOccupancy(currentOccupancy);
+       setSharedSlots(shared.slots);
+-      setCapacityConfigured(shared.capacityConfigured);
+       setBookings(mine);
+       setVisits(currentVisits);
+       setWorkouts(currentWorkouts);
+@@ -64,7 +62,6 @@ export function GymApp() {
+       setOccupancy(current);
+       setSession(currentSession);
+       setSharedSlots(shared.slots);
+-      setCapacityConfigured(shared.capacityConfigured);
+       setOnline(true);
+     } catch (caught) {
+       setOnline(false);
+@@ -177,7 +174,7 @@ export function GymApp() {
+     <AppFrame page={page} onNavigate={setPage}>
+       {!online && <InlineNotice tone="warning">Der Gym-Server ist nicht erreichbar. Angezeigte Daten können veraltet sein; Check-in, Reservierungen und Speichern sind derzeit deaktiviert.</InlineNotice>}
+       {page === 'dashboard' && <Dashboard session={session} occupancy={occupancy} bookings={bookings} workouts={workouts} online={online} busy={busy} error={error} onPresence={handlePresence} onNavigate={setPage} />}
+-      {page === 'calendar' && <Calendar bookings={bookings} sharedSlots={sharedSlots} visits={visits} availability={availability} capacityConfigured={capacityConfigured} online={online} busy={busy} error={error} onCreateBooking={handleCreateBooking} onDeleteBooking={handleDeleteBooking} onCheckAvailability={handleAvailability} />}
++      {page === 'calendar' && <Calendar bookings={bookings} sharedSlots={sharedSlots} visits={visits} availability={availability} online={online} busy={busy} error={error} onCreateBooking={handleCreateBooking} onDeleteBooking={handleDeleteBooking} onCheckAvailability={handleAvailability} />}
+       {page === 'training' && <Training workouts={workouts} busy={busy} error={error} online={online} onCreate={handleCreateWorkout} onDelete={handleDeleteWorkout} />}
+       {page === 'progress' && <Progress workouts={workouts} weeklyGoal={weeklyGoal} busy={busy} error={error} online={online} onUpdateGoal={handleGoal} />}
+       {page === 'profile' && <Profile session={session} online={online} busy={busy} error={error} onCreateRecoveryCode={handleIssueRecoveryCode} onRecover={handleRecover} onDeleteData={handleDeleteData} />}
+@@ -190,7 +187,7 @@ export function GymApp() {
+ function errorMessage(error: unknown): string {
+   if (error instanceof GymApiError) {
+     if (error.status === 0) return error.message;
+-    if (error.status === 409) return 'Für diese Zeit sind keine reservierbaren Plätze mehr frei.';
++    if (error.status === 409) return 'Diese Zeit hast du bereits geplant.';
+     if (error.status === 401) return 'Deine Sitzung ist abgelaufen. Bitte lade die App neu oder stelle dein Profil wieder her.';
+     if (error.status === 429) return 'Zu viele Wiederherstellungsversuche. Bitte warte kurz und versuche es erneut.';
+     if (error.status === 400) return 'Bitte prüfe die eingegebenen Daten.';
+-- 
+2.43.0
+

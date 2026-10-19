@@ -1,4 +1,4 @@
-import express, { type NextFunction, type Request, type Response } from 'express';
+﻿import express, { type NextFunction, type Request, type Response } from 'express';
 import type { DatabaseSync } from 'node:sqlite';
 import { GymAppRepository } from './gymAppRepository';
 import { GymAppService, GymDomainError } from './gymAppService';
@@ -72,6 +72,12 @@ export function createGymAppApi(database: DatabaseSync, options: GymApiOptions =
     if (origin) {
       try { sameOrigin = new URL(origin).host === request.get('host'); } catch { sameOrigin = false; }
     }
+    console.log('[Origin-Debug]', {
+      origin,
+      host: request.get('host'),
+      sameOrigin,
+      allowedOrigins: [...allowedOrigins],
+    });
     const allowed = !origin || sameOrigin || allowedOrigins.has(origin);
     if (!allowed) {
       response.status(403).json({ error: 'origin is not allowed' });
@@ -237,3 +243,4 @@ export function createGymAppApi(database: DatabaseSync, options: GymApiOptions =
 
   return app;
 }
+
